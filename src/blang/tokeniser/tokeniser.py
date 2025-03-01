@@ -9,7 +9,7 @@ ALPHA_LOWER = "abcdefghijklmnopqrstuvwxyz"
 ALPHA_UPPER = ALPHA_LOWER.upper()
 NUMERAL = "0123456789"
 PLUSMINUS = "+-"
-DECIMAL = "."
+PERIOD = "."
 UNDERSCORE = "_"
 SPACE = " "
 EQ = "="
@@ -24,7 +24,7 @@ class Token:
 
 
 class TokenSpec(enum.Enum):
-    DEF = Matcher(*"def ")
+    DEF = Matcher(*"def ")  # todo order here matters :-( must make greedy
     NEWLINE = Matcher("\n")
     IDENTIFIER = Matcher(
         ALPHA_LOWER + ALPHA_UPPER + UNDERSCORE,
@@ -34,7 +34,12 @@ class TokenSpec(enum.Enum):
     LPAREN = Matcher("(")
     RPAREN = Matcher(")")
     COLON = Matcher(":")
-    INTEGER = Matcher(Repeat(PLUSMINUS, min=0, max=1), Repeat(NUMERAL))
+    MINUS = Matcher("-")
+    PLUS = Matcher("+")
+    DIVIDE = Matcher("/")
+    MULTIPLY = Matcher("*")
+    FLOAT = Matcher(Repeat(NUMERAL, min=0), PERIOD, Repeat(NUMERAL, min=1))
+    INTEGER = Matcher(Repeat(NUMERAL, min=1))
     ASSIGN = Matcher("=")
 
     @classmethod

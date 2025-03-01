@@ -28,9 +28,12 @@ class Repeat:
         self.max = max
         self.count = 0
 
+    def hit(self):
+        self.count += 1
+
     @property
     def is_full(self):
-        return not self.max or self.count == self.max
+        return self.max and self.count == self.max
 
 
 class Matcher:
@@ -83,6 +86,7 @@ class Matcher:
             mach = next_mach[1] if len(next_mach) > 1 else None
             if not repeat.is_full and c in repeat.sym:
                 self.content += c
+                repeat.hit()
                 return Matcher.FeedResult.CONTINUE
             elif mach is None:
                 self.active_exp.pop(0)

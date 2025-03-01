@@ -40,7 +40,30 @@ def test_tokeniser_trick():
 
 
 def test_tokeniser_int():
-    test = """a=1"""
-    expect = [TokenSpec.IDENTIFIER, TokenSpec.ASSIGN, TokenSpec.INTEGER]
+    test = """123"""
+    expect = [TokenSpec.INTEGER]
     actual = [t.typ for t in TokenSpec.tokenise(test)]
+    assert actual == expect
+
+
+def test_tokeniser_neg_int():
+    test = """-123"""
+    expect = [TokenSpec.MINUS, TokenSpec.INTEGER]
+    actual = [t.typ for t in TokenSpec.tokenise(test)]
+    assert actual == expect
+
+
+def test_tokeniser_int_doubleneg():
+    test = """--123"""
+    expect = [TokenSpec.MINUS, TokenSpec.MINUS, TokenSpec.INTEGER]
+    actual = [t.typ for t in TokenSpec.tokenise(test)]
+    print(actual)
+    assert actual == expect
+
+
+def test_tokeniser_float():
+    test = """1.5"""
+    expect = [TokenSpec.FLOAT]
+    actual = [t.typ for t in TokenSpec.tokenise(test)]
+    print(actual)
     assert actual == expect
