@@ -1,0 +1,22 @@
+[project]
+name = "blang"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ruff>=0.9.9",
+]
+
+[dependency-groups]
+dev = [
+    "ipython>=9.0.0",
+    "pytest>=8.3.4",
+    "python-lsp-server>=1.12.2",
+    "ruff>=0.9.9",
+    "taskipy>=1.14.1",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
