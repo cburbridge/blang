@@ -66,7 +66,11 @@ class Matcher:
 
     @property
     def active(self):
-        return len(self.active_exp) > 0 and len(self.content) > 0
+        return len(self.active_exp) > 0 and self.eaten_count > 0
+
+    @property
+    def eaten_count(self):
+        return len(self.content)
 
     def feed(self, c):
         if len(self.active_exp) < 1:
@@ -107,7 +111,3 @@ class Matcher:
         self.content = ""
         self.active_exp = copy.deepcopy(self.exp)  # coppies the repeats too, nice
         self.is_failed = False
-
-    def feed_and_print(self, c):
-        print(self.feed(c))
-        print(self.content)
