@@ -1,5 +1,5 @@
 import pytest
-from blang.tokeniser import TokenSpec
+from blang.parser.tokeniser import TokenSpec
 import blang.exceptions
 
 
@@ -9,15 +9,9 @@ def test_tokeniser_valid():
        _stinks
     """
     expect = [
-        TokenSpec.NEWLINE,
-        TokenSpec.WHITESPACE,
         TokenSpec.DEF,
         TokenSpec.IDENTIFIER,
-        TokenSpec.NEWLINE,
-        TokenSpec.WHITESPACE,
         TokenSpec.IDENTIFIER,
-        TokenSpec.NEWLINE,
-        TokenSpec.WHITESPACE,
     ]
     actual = [t.typ for t in TokenSpec.tokenise(test_string)]
     assert actual == expect
@@ -33,9 +27,35 @@ def test_tokeniser_invalid():
 
 
 def test_tokeniser_trick():
-    teststr = "def a_def()"
-    expect = [TokenSpec.DEF, TokenSpec.IDENTIFIER, TokenSpec.LPAREN, TokenSpec.RPAREN]
+    teststr = "def a_def() defdef"
+    expect = [
+        TokenSpec.DEF,
+        TokenSpec.IDENTIFIER,
+        TokenSpec.LPAREN,
+        TokenSpec.RPAREN,
+        TokenSpec.IDENTIFIER,
+    ]
     actual = [t.typ for t in TokenSpec.tokenise(teststr)]
+    assert actual == expect
+
+
+def test_tokeniser_tricks():
+    teststr = "u32u64"
+    expect = [
+        TokenSpec.IDENTIFIER,
+    ]
+    actual = [t.typ for t in TokenSpec.tokenise(teststr)]
+    assert actual == expect
+
+
+def test_tokeniser_tricks_typs():
+    teststr = "u32 u64"
+    expect = [
+        TokenSpec.U32,
+        TokenSpec.U64,
+    ]
+    actual = [t.typ for t in TokenSpec.tokenise(teststr)]
+    print([t.name for t in actual])
     assert actual == expect
 
 
