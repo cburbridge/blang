@@ -19,13 +19,10 @@ class Node:
         if self._tokens[self._eaten] == token:
             self._eaten += 1
             return True
-        else:
-            print(f"{__name__} Not eat => {self._tokens[self._eaten].typ}")
         raise ParseError
 
     def eat_child(self, node):
         n, c = node.create(self._tokens[self._eaten :])
-        print(f"Child eaten {c=}")
         if n:
             self._eaten += c
             self.children.append(n)
@@ -52,6 +49,24 @@ def parser(method):
     def wrapper(cls, *args, **kwargs):
         try:
             return method(cls, *args, **kwargs)
+        except ParseError:
+            return (None, 0)
+
+    return wrapper
+
+
+def parser2(method):
+    @classmethod
+    def wrapper(cls, tokens):
+        try:
+            prototype_node = cls(tokens=tokens)
+            created_node = method(prototype_node)
+            if created_node:
+                # if the created node is not the prototype, maybe as we just want a child,
+                # then we need to stil consider the tokens eaten by the prototype as eatend by
+                # the chosed node
+                created_node._eaten = prototype_node._eaten
+            return created_node, created_node and created_node._eaten or 0
         except ParseError:
             return (None, 0)
 
@@ -118,17 +133,16 @@ class BaseType(Node):
 
 
 class RefType(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(tokens=tokens)
+    @parser2
+    def create(node):
         node.eat(TokenSpec.REF)
 
         if maybe(node.eat_child)(RefType):
-            return node, node._eaten
+            return node
         if maybe(node.eat_child)(BaseType):
-            return node, node._eaten
+            return node
 
-        return None, 0
+        return None
 
 
 def OneOf(*args):
@@ -147,18 +161,6 @@ def OneOf(*args):
 Type = OneOf(BaseType, RefType)  # order matters
 
 
-def test_types2():
-    s = "ref ref f64"
-    tokens = list(TokenSpec.tokenise(s))
-    print([t.typ.name for t in tokens])
-    t, c = Type.create(tokens)
-    assert t
-    # assert c == len(tokens)
-    print(t.children)
-    print_tree(t)
-    # assert False
-
-
 class Identifier(Node):
     @parser
     def create(cls, tokens):
@@ -168,50 +170,30 @@ class Identifier(Node):
 
 
 class TypedIdentifier(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(tokens=tokens)
+    @parser2
+    def create(node):
         node.eat_child(Identifier)
-
-        # if not maybe(node.eat)(TokenSpec.COLON):
-        # return node.children[0], node._eaten  # just an idenetifier
         node.eat(TokenSpec.COLON)
         node.eat_child(Type)
-        return node, node._eaten
+        return node
 
 
 class Declaration(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(tokens=tokens)
+    @parser2
+    def create(node):
         node.eat_child(TypedIdentifier)
         if maybe(node.eat)(TokenSpec.ASSIGN):
             node.eat_child(Expr)
-        return node, node._eaten
-
-
-def test_decl():
-    s = "fisher :u32 = 99"
-    # s = "99"
-
-    tokens = list(TokenSpec.tokenise(s))
-    for t in tokens:
-        print(t.typ.name)
-    print()
-    t, c = Declaration.create(tokens)
-    print_tree(t)
-    # assert False
-    assert c == len(tokens)
+        return node
 
 
 class Assignment(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(tokens=tokens)
+    @parser2
+    def create(node):
         node.eat_child(Identifier)
         node.eat(TokenSpec.ASSIGN)
         node.eat_child(Expr)
-        return node, node._eaten
+        return node
 
 
 class Number(Node):
@@ -223,29 +205,16 @@ class Number(Node):
 
 
 class Return(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(tokens=tokens)
+    @parser2
+    def create(node):
         node.eat(TokenSpec.RETURN)
         maybe(node.eat_child)(Expr)
-        return node, node._eaten
-
-
-def test_return():
-    s = "return 9"
-    tokens = list(TokenSpec.tokenise(s))
-    print([t.typ.name for t in tokens])
-    t, c = Return.create(tokens)
-    assert t
-    assert c == len(tokens)
-    print(t.children)
-    print_tree(t)
+        return node
 
 
 class FuncCall(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(tokens=tokens)
+    @parser2
+    def create(node):
         node.eat_child(Identifier)
         node.eat(TokenSpec.LPAREN)
         while True:
@@ -254,13 +223,12 @@ class FuncCall(Node):
             if not maybe(node.eat)(TokenSpec.COMMA):
                 break
         node.eat(TokenSpec.RPAREN)
-        return node, node._eaten
+        return node
 
 
 class ParameterList(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(tokens=tokens)
+    @parser2
+    def create(node):
         node.eat(TokenSpec.LPAREN)
         while True:
             if not maybe(node.eat_child)(TypedIdentifier):
@@ -269,26 +237,24 @@ class ParameterList(Node):
                 break
         node.eat(TokenSpec.RPAREN)
 
-        return node, node._eaten
+        return node
 
 
 class FuncDef(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(tokens=tokens)
+    @parser2
+    def create(node):
         node.eat(TokenSpec.DEF)
         node.eat_child(Identifier)
         node.eat_child(ParameterList)
         node.eat(TokenSpec.COLON)
         node.eat_child(Type)
         node.eat_child(Block)
-        return node, node._eaten
+        return node
 
 
 class Block(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(tokens=tokens)
+    @parser2
+    def create(node):
         node.eat(TokenSpec.LBRACE)
 
         while True:
@@ -296,17 +262,16 @@ class Block(Node):
             if not c:
                 break
         node.eat(TokenSpec.RBRACE)
-        return node, node._eaten
+        return node
 
 
 class CapturedExpression(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(tokens=tokens)
+    @parser2
+    def create(node):
         node.eat(TokenSpec.LPAREN)
         node.eat_child(Expr)
         node.eat(TokenSpec.RPAREN)
-        return node.children[0], node._eaten  # noteice potential eat count isssue
+        return node.children[0]
 
 
 Factor = OneOf(FuncCall, Number, Identifier, CapturedExpression)
@@ -362,30 +327,8 @@ class Additive(Node):
         return None, 0
 
 
-# class Statement(Node):
-#    @parser
-#    def create(cls, tokens):
-#        for Possible in (
-#            FuncCall,
-#            FuncDef,
-#            Assignment,
-#            Declaration,
-#            Return,
-#        ):  # todo: order he matters
-#            node, eaten = Possible.create(tokens)
-#            if node:
-#                return node, eaten
-#        return None, 0
-
 Statement = OneOf(FuncCall, FuncDef, Assignment, Declaration, Return)
 
-# class Expr(Node):
-# @classmethod
-# def create(cls, tokens):
-# node, eaten = Number.create(tokens)
-# if node:
-# return node, eaten
-# return None, 0
 Expr = Additive
 
 
@@ -558,4 +501,41 @@ def print_tree(node, indent=1):
     )
     for c in node.children:
         print_tree(c, indent + 3)
+    # assert False
+
+
+def test_decl():
+    s = "fisher :u32 = 99"
+    # s = "99"
+
+    tokens = list(TokenSpec.tokenise(s))
+    for t in tokens:
+        print(t.typ.name)
+    print()
+    t, c = Declaration.create(tokens)
+    print_tree(t)
+    # assert False
+    assert c == len(tokens)
+
+
+def test_return():
+    s = "return 9"
+    tokens = list(TokenSpec.tokenise(s))
+    print([t.typ.name for t in tokens])
+    t, c = Return.create(tokens)
+    assert t
+    assert c == len(tokens)
+    print(t.children)
+    print_tree(t)
+
+
+def test_types2():
+    s = "ref ref f64"
+    tokens = list(TokenSpec.tokenise(s))
+    print([t.typ.name for t in tokens])
+    t, c = Type.create(tokens)
+    assert t
+    # assert c == len(tokens)
+    print(t.children)
+    print_tree(t)
     # assert False
