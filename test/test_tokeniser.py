@@ -1,5 +1,5 @@
 import pytest
-from blang.parser.tokeniser import TokenSpec
+from blang.tokeniser import TokenSpec
 import blang.exceptions
 
 

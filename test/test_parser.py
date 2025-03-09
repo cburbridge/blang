@@ -1,4 +1,4 @@
-from blang.parser.parser import (
+from blang.parser import (
     TokenSpec,
     Block,
     Assignment,
