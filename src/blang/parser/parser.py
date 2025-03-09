@@ -13,10 +13,12 @@ class Node:
         self._tokens = tokens
         self._eaten = 0
 
-    def eat(self, token):
+    def eat(self, token, set_leaf=False):
         if len(self._tokens) < self._eaten + 1:
             raise ParseError
         if self._tokens[self._eaten] == token:
+            if set_leaf:
+                self.token = self._tokens[self._eaten]
             self._eaten += 1
             return True
         raise ParseError
@@ -110,9 +112,8 @@ ForLoop         -> 'for' '(' Assignment? ';' Expr? ';' Assignment? ')' Block
 
 
 class BaseType(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(token=tokens[0], tokens=tokens)
+    @parser2
+    def create(node):
         for basetype in [
             TokenSpec.U8,
             TokenSpec.U16,
@@ -127,9 +128,9 @@ class BaseType(Node):
             TokenSpec.F32,
             TokenSpec.F64,
         ]:
-            if maybe(node.eat)(basetype):
-                return node, node._eaten
-        return None, 0
+            if maybe(node.eat)(basetype, set_leaf=True):
+                return node
+        return None
 
 
 class RefType(Node):
@@ -162,11 +163,10 @@ Type = OneOf(BaseType, RefType)  # order matters
 
 
 class Identifier(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(token=tokens[0], tokens=tokens)
-        node.eat(TokenSpec.IDENTIFIER)
-        return node, node._eaten
+    @parser2
+    def create(node):
+        node.eat(TokenSpec.IDENTIFIER, set_leaf=True)
+        return node
 
 
 class TypedIdentifier(Node):
@@ -197,11 +197,12 @@ class Assignment(Node):
 
 
 class Number(Node):
-    @parser
-    def create(cls, tokens):
-        node = cls(token=tokens[0], tokens=tokens)
-        if maybe(node.eat)(TokenSpec.INTEGER) or node.eat(TokenSpec.FLOAT):
-            return node, node._eaten
+    @parser2
+    def create(node):
+        if maybe(node.eat)(TokenSpec.INTEGER, set_leaf=True) or node.eat(
+            TokenSpec.FLOAT, set_leaf=True
+        ):
+            return node
 
 
 class Return(Node):
@@ -277,54 +278,78 @@ class CapturedExpression(Node):
 Factor = OneOf(FuncCall, Number, Identifier, CapturedExpression)
 
 
-class Term(Node):
-    @parser
-    def create(cls, tokens):
-        total_eaten = 0
-        node, eaten = Factor.create(tokens)
-        if node:
-            total_eaten += eaten
-            while total_eaten < len(tokens):
-                if (
-                    tokens[total_eaten] == TokenSpec.ASTRISK
-                    or tokens[total_eaten] == TokenSpec.DIVIDE
-                ):
-                    inner_eaten = 1
-                    factor2, eaten = Factor.create(tokens[total_eaten + inner_eaten :])
-                    if factor2:
-                        node = Node(tokens[total_eaten], children=[node, factor2])
-                        total_eaten += inner_eaten + eaten
-                    else:
-                        break
-                else:
-                    break
-            return node, total_eaten
-        return None, 0
+# class Term(Node):
+#    @parser
+#    def create(cls, tokens):
+#        total_eaten = 0
+#        node, eaten = Factor.create(tokens)
+#        if node:
+#            total_eaten += eaten
+#            while total_eaten < len(tokens):
+#                if (
+#                    tokens[total_eaten] == TokenSpec.ASTRISK
+#                    or tokens[total_eaten] == TokenSpec.DIVIDE
+#                ):
+#                    inner_eaten = 1
+#                    factor2, eaten = Factor.create(tokens[total_eaten + inner_eaten :])
+#                    if factor2:
+#                        node = Node(tokens[total_eaten], children=[node, factor2])
+#                        total_eaten += inner_eaten + eaten
+#                    else:
+#                        break
+#                else:
+#                    break
+#            return node, total_eaten
+#        return None, 0
+
+
+# class Additive(Node):
+#    @parser
+#    def create(cls, tokens):
+#        total_eaten = 0
+#        node, eaten = Term.create(tokens)
+#        if node:
+#            total_eaten += eaten
+#            while total_eaten < len(tokens):
+#                if (
+#                    tokens[total_eaten] == TokenSpec.PLUS
+#                    or tokens[total_eaten] == TokenSpec.MINUS
+#                ):
+#                    inner_eaten = 1
+#                    term2, eaten = Term.create(tokens[total_eaten + inner_eaten :])
+#                    if term2:
+#                        node = Node(tokens[total_eaten], children=[node, term2])
+#                        total_eaten += inner_eaten + eaten
+#                    else:
+#                        break
+#                else:
+#                    break
+#            return node, total_eaten
+#        return None, 0
 
 
 class Additive(Node):
-    @parser
-    def create(cls, tokens):
-        total_eaten = 0
-        node, eaten = Term.create(tokens)
-        if node:
-            total_eaten += eaten
-            while total_eaten < len(tokens):
-                if (
-                    tokens[total_eaten] == TokenSpec.PLUS
-                    or tokens[total_eaten] == TokenSpec.MINUS
-                ):
-                    inner_eaten = 1
-                    term2, eaten = Term.create(tokens[total_eaten + inner_eaten :])
-                    if term2:
-                        node = Node(tokens[total_eaten], children=[node, term2])
-                        total_eaten += inner_eaten + eaten
-                    else:
-                        break
-                else:
-                    break
-            return node, total_eaten
-        return None, 0
+    @parser2
+    def create(node):
+        node.eat_child(Term)
+        if maybe(node.eat)(TokenSpec.MINUS, set_leaf=True) or maybe(node.eat)(
+            TokenSpec.PLUS, set_leaf=True
+        ):
+            node.eat_child(Additive)
+            return node
+        return node.children[0]
+
+
+class Term(Node):
+    @parser2
+    def create(node):
+        node.eat_child(Factor)
+        if maybe(node.eat)(TokenSpec.ASTRISK, set_leaf=True) or maybe(node.eat)(
+            TokenSpec.DIVIDE, set_leaf=True
+        ):
+            node.eat_child(Term)
+            return node
+        return node.children[0]
 
 
 Statement = OneOf(FuncCall, FuncDef, Assignment, Declaration, Return)
@@ -366,14 +391,13 @@ def test_assign():
 
 
 def test_term():
-    s = "45 + 98 * (75.2 - 12)"
+    s = "45 + 98-12 * (75.2 - 12)"
 
     tokens = list(TokenSpec.tokenise(s))
     for t in tokens:
         print(t.typ.name)
     t, c = Additive.create(tokens)
     print_tree(t)
-    # assert False
     assert c == len(tokens)
 
 
