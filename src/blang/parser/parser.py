@@ -24,9 +24,9 @@ class Node:
         raise ParseError
 
     def eat_child(self, node):
-        n, c = node.create(self._tokens[self._eaten :])
+        n = node.create(self._tokens[self._eaten :])
         if n:
-            self._eaten += c
+            self._eaten += n._eaten
             self.children.append(n)
             return True
         raise ParseError
@@ -57,9 +57,9 @@ def parser(method):
                 # then we need to stil consider the tokens eaten by the prototype as eatend by
                 # the chosed node
                 created_node._eaten = prototype_node._eaten
-            return created_node, created_node and created_node._eaten or 0
+            return created_node
         except ParseError:
-            return (None, 0)
+            return None
 
     return wrapper
 
@@ -140,10 +140,10 @@ def OneOf(*args):
         @classmethod
         def create(cls, tokens):
             for Possible in args:
-                node, eaten = Possible.create(tokens)
+                node = Possible.create(tokens)
                 if node:
-                    return node, eaten
-            return None, 0
+                    return node
+            return None
 
     return _one_of
 
@@ -310,10 +310,10 @@ def test_block():
     for t in tokens:
         print(t.typ.name)
     print()
-    t, c = Block.create(tokens)
+    t = Block.create(tokens)
     print_tree(t)
     # assert False
-    assert c == len(tokens)
+    assert t._eaten == len(tokens)
 
 
 def test_assign():
@@ -323,10 +323,10 @@ def test_assign():
     for t in tokens:
         print(t.typ.name)
     print()
-    t, c = Assignment.create(tokens)
+    t = Assignment.create(tokens)
     print_tree(t)
     # assert False
-    assert c == len(tokens)
+    assert t._eaten == len(tokens)
 
 
 def test_term():
@@ -335,9 +335,9 @@ def test_term():
     tokens = list(TokenSpec.tokenise(s))
     for t in tokens:
         print(t.typ.name)
-    t, c = Additive.create(tokens)
+    t = Additive.create(tokens)
     print_tree(t)
-    assert c == len(tokens)
+    assert t._eaten == len(tokens)
 
 
 def test_number_factor():
@@ -346,10 +346,10 @@ def test_number_factor():
     tokens = list(TokenSpec.tokenise(s))
     for t in tokens:
         print(t.typ.name)
-    t, c = Factor.create(tokens)
+    t = Factor.create(tokens)
     print_tree(t)
     # assert False
-    assert c == len(tokens)
+    assert t._eaten == len(tokens)
     assert t.token.typ == TokenSpec.FLOAT
     assert float(t.token.text) == 654.978
 
@@ -357,8 +357,8 @@ def test_number_factor():
 def test_types():
     s = "u32"
     tokens = list(TokenSpec.tokenise(s))
-    t, c = Type.create(tokens)
-    assert c == 1
+    t = Type.create(tokens)
+    assert t._eaten == 1
     assert isinstance(t, BaseType)
     assert t.token.typ == TokenSpec.U32
     # print_tree(t)
@@ -369,9 +369,9 @@ def test_base_type():
     s = "u32"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
-    t, c = Type.create(tokens)
+    t = Type.create(tokens)
     print_tree(t)
-    assert c == 1
+    assert t._eaten == 1
     assert isinstance(t, BaseType)
     # assert False
 
@@ -380,9 +380,9 @@ def test_ref_type():
     s = "ref ref u32"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
-    t, c = Type.create(tokens)
+    t = Type.create(tokens)
     print_tree(t)
-    assert c == 3
+    assert t._eaten == 3
     assert isinstance(t, RefType)
     # assert False
 
@@ -391,9 +391,9 @@ def test_paramlist():
     s = "(fish:f64, face:ref i8) {}"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
-    t, c = ParameterList.create(tokens)
+    t = ParameterList.create(tokens)
     assert t
-    assert c == 10
+    assert t._eaten == 10
     print(t.children)
     print_tree(t)
     # assert False
@@ -412,9 +412,9 @@ def test_func():
     """
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
-    t, c = FuncDef.create(tokens)
+    t = FuncDef.create(tokens)
     assert t
-    assert c == len(tokens)
+    assert t._eaten == len(tokens)
     print(t.children)
     print_tree(t)
     # assert False
@@ -424,9 +424,9 @@ def test_typed_ident():
     s = "fish: f64"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
-    t, c = TypedIdentifier.create(tokens)
+    t = TypedIdentifier.create(tokens)
     assert t
-    assert c == 3
+    assert t._eaten == 3
     print(t.children)
     assert isinstance(t, TypedIdentifier)
     print_tree(t)
@@ -437,7 +437,7 @@ def test_typed_ident_no_type():
     s = "fish"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
-    t, c = TypedIdentifier.create(tokens)
+    t = TypedIdentifier.create(tokens)
     assert not t
 
 
@@ -445,9 +445,9 @@ def test_identifier():
     s = "fish"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
-    t, c = Identifier.create(tokens)
+    t = Identifier.create(tokens)
     assert t
-    # assert c == 3
+    # assert t._eaten == 3
     print(t)
     print(t.children)
     print_tree(t)
@@ -475,19 +475,19 @@ def test_decl():
     for t in tokens:
         print(t.typ.name)
     print()
-    t, c = Declaration.create(tokens)
+    t = Declaration.create(tokens)
     print_tree(t)
     # assert False
-    assert c == len(tokens)
+    assert t._eaten == len(tokens)
 
 
 def test_return():
     s = "return 9"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
-    t, c = Return.create(tokens)
+    t = Return.create(tokens)
     assert t
-    assert c == len(tokens)
+    assert t._eaten == len(tokens)
     print(t.children)
     print_tree(t)
 
@@ -496,9 +496,9 @@ def test_types2():
     s = "ref ref f64"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
-    t, c = Type.create(tokens)
+    t = Type.create(tokens)
     assert t
-    # assert c == len(tokens)
+    assert t._eaten == len(tokens)
     print(t.children)
     print_tree(t)
     # assert False
