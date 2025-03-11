@@ -11,6 +11,7 @@ from blang.parser import (
     Return,
     Declaration,
     Identifier,
+    print_tree,
 )
 
 
@@ -168,19 +169,6 @@ def test_identifier():
     print(t)
     print(t.children)
     print_tree(t)
-    # assert False
-
-
-def print_tree(node, indent=1):
-    print(
-        " " * (indent - 1),
-        "-",
-        node.typ,
-        "  =",
-        node.token.text if node.token else "XXXX",
-    )
-    for c in node.children:
-        print_tree(c, indent + 3)
     # assert False
 
 

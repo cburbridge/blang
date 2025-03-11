@@ -14,12 +14,14 @@ class Node:
         self._tokens = tokens
         self._eaten = 0
 
-    def eat(self, token, set_leaf=False):
+    def eat(self, token, set_leaf=False, set_child=False):
         if len(self._tokens) < self._eaten + 1:
             raise ParseError
         if self._tokens[self._eaten] == token:
             if set_leaf:
                 self.token = self._tokens[self._eaten]
+            if set_child:
+                self.children.append(Node("token", token=self._tokens[self._eaten]))
             self._eaten += 1
             return True
         raise ParseError
@@ -60,6 +62,18 @@ def parser(method):
     return wrapper
 
 
+def print_tree(node, indent=1):
+    print(
+        " " * (indent - 1),
+        "-",
+        node.typ,
+        "  =",
+        node.token.text if node.token else "XXXX",
+    )
+    for c in node.children:
+        print_tree(c, indent + 3)
+
+
 def OneOf(*args):
     def _OneOf(tokens):
         for Possible in args:
@@ -86,6 +100,7 @@ def BaseType(node):
         TokenSpec.I128,
         TokenSpec.F32,
         TokenSpec.F64,
+        TokenSpec.BOOL,
     ]:
         if maybe(node.eat)(basetype, set_leaf=True):
             return node
@@ -94,17 +109,33 @@ def BaseType(node):
 
 @parser
 def RefType(node):
-    node.eat(TokenSpec.REF)
+    node.eat(TokenSpec.LESS_THAN)
 
-    if maybe(node.eat_child)(RefType):
-        return node
-    if maybe(node.eat_child)(BaseType):
-        return node
+    if not maybe(node.eat_child)(RefType) and not maybe(node.eat_child)(BaseType):
+        return None
+    node.eat(TokenSpec.MORE_THAN)
 
-    return None
+    return node
 
 
-Type = OneOf(BaseType, RefType)  # order matters
+@parser
+def IdentifierRef(node):
+    node.eat(TokenSpec.MORE_THAN)
+    node.eat_child(Identifier)
+    node.eat(TokenSpec.LESS_THAN)
+    return node
+
+
+@parser
+def Array(node):
+    node.eat_child(OneOf(BaseType, RefType))
+    node.eat(TokenSpec.LSQBRACKET)
+    node.eat(TokenSpec.INTEGER, set_child=True)
+    node.eat(TokenSpec.RSQBRACKET)
+    return node
+
+
+Type = OneOf(Array, BaseType, RefType)  # order matters
 
 
 @parser
@@ -192,7 +223,6 @@ def FuncDef(node):
 @parser
 def Block(node):
     node.eat(TokenSpec.LBRACE)
-
     while True:
         c = maybe(node.eat_child)(Statement)
         if not c:
@@ -209,7 +239,26 @@ def CapturedExpression(node):
     return node.children[0]
 
 
-Factor = OneOf(FuncCall, Number, Identifier, CapturedExpression)
+@parser
+def DeRef(node):
+    node.eat(TokenSpec.LESS_THAN)
+    node.eat_child(Additive)
+    node.eat(TokenSpec.MORE_THAN)
+    return node
+
+
+@parser
+def Boolean(node):
+    if maybe(node.eat)(TokenSpec.TRUE, set_leaf=True) or maybe(node.eat)(
+        TokenSpec.FALSE, set_leaf=True
+    ):
+        return node
+    return None
+
+
+Factor = OneOf(
+    FuncCall, Number, Boolean, Identifier, IdentifierRef, CapturedExpression, DeRef
+)
 
 
 @parser
@@ -234,6 +283,49 @@ def Term(node):
     return node.children[0]
 
 
+@parser
+def Relational(node):
+    node.eat_child(Additive)
+    if (
+        maybe(node.eat)(TokenSpec.MORE_THAN, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.LESS_THAN, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.MORE_THAN_EQ, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.LESS_THAN_EQ, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.EQUAL, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.NOT_EQ, set_leaf=True)
+    ):
+        node.eat_child(Additive)
+        return node
+    return node.children[0]
+
+
+@parser
+def LogicAnd(node):
+    node.eat_child(Relational)
+    if maybe(node.eat)(TokenSpec.AND):
+        node.eat_child(Relational)
+        return node
+    return node.children[0]
+
+
+@parser
+def LogicOr(node):
+    node.eat_child(LogicAnd)
+    if maybe(node.eat)(TokenSpec.OR):
+        node.eat_child(LogicAnd)
+        return node
+    return node.children[0]
+
+
+Expr = LogicOr  # Additive
 Statement = OneOf(FuncCall, FuncDef, Assignment, Declaration, Return)
 
-Expr = Additive
+
+@parser
+def Module(node):
+    while maybe(node.eat_child)(Statement):
+        continue
+    if node._eaten != len(node._tokens):
+        print("unexpected token ", node._tokens[node._eaten])
+        raise ParseError
+    return node

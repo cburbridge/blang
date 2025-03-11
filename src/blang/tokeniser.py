@@ -40,15 +40,31 @@ class TokenSpec(enum.Enum):
     RPAREN = Matcher(")")
     LBRACE = Matcher("{")
     RBRACE = Matcher("}")
+    LSQBRACKET = Matcher("[")
+    RSQBRACKET = Matcher("]")
+
+    LESS_THAN = Matcher(*"<")
+    MORE_THAN = Matcher(*">")
+    LESS_THAN_EQ = Matcher(*"<=")
+    MORE_THAN_EQ = Matcher(*">=")
+    EQUAL = Matcher(*"==")
+    NOT_EQ = Matcher(*"!=")
     COLON = Matcher(":")
     MINUS = Matcher("-")
     PLUS = Matcher("+")
     DIVIDE = Matcher("/")
     ASTRISK = Matcher("*")
     COMMA = Matcher(",")
+    REF = Matcher(*"&")
+
     FLOAT = Matcher(Repeat(NUMERAL, min=0), PERIOD, Repeat(NUMERAL, min=1))
     INTEGER = Matcher(Repeat(NUMERAL, min=1))
     ASSIGN = Matcher("=")
+
+    AND = Matcher(*"and")
+    OR = Matcher(*"or")
+    TRUE = Matcher(*"true")
+    FALSE = Matcher(*"false")
 
     ####
     ## Types
@@ -65,7 +81,7 @@ class TokenSpec(enum.Enum):
     I128 = Matcher(*"i128")
     F32 = Matcher(*"f32")
     F64 = Matcher(*"f64")
-    REF = Matcher(*"ref")
+    BOOL = Matcher(*"bool")
     ####
 
     @classmethod
