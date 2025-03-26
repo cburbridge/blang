@@ -30,3 +30,24 @@ FuncCall        -> IDENTIFIER '(' (Expr (',' Expr)*)? ')'
 IfStatement     -> 'if' '(' Expr ')' Block ('else' Block)?
 WhileLoop       -> 'while' '(' Expr ')' Block
 ForLoop         -> 'for' '(' Assignment? ';' Expr? ';' Assignment? ')' Block
+
+
+q:u32[100]
+
+for 10 q as n, i {
+}
+
+
+a: u32
+b: u64
+
+def add(p:u32, q:u32):u32 {
+  v: u32
+  v = 100
+  return p+q+v
+}
+
+def main() :u8 {
+   add(9,10)
+   return 0
+}

@@ -11,7 +11,9 @@ PLUSMINUS = "+-"
 PERIOD = "."
 UNDERSCORE = "_"
 SPACE = " "
+QUOTE = '"'
 EQ = "="
+ANY = ALPHA_LOWER + ALPHA_UPPER + NUMERAL + PLUSMINUS + PERIOD + UNDERSCORE + SPACE + EQ
 
 
 @dataclass
@@ -57,6 +59,7 @@ class TokenSpec(enum.Enum):
     COMMA = Matcher(",")
     REF = Matcher(*"&")
 
+    STRING = Matcher(QUOTE, Repeat(ANY), QUOTE)
     FLOAT = Matcher(Repeat(NUMERAL, min=0), PERIOD, Repeat(NUMERAL, min=1))
     INTEGER = Matcher(Repeat(NUMERAL, min=1))
     ASSIGN = Matcher("=")
@@ -66,6 +69,13 @@ class TokenSpec(enum.Enum):
     TRUE = Matcher(*"true")
     FALSE = Matcher(*"false")
 
+    IF = Matcher(*"if")
+    ELSE = Matcher(*"else")
+
+    WHILE = Matcher(*"while")
+    BREAK = Matcher(*"break")
+    FOR = Matcher(*"for")
+    AS = Matcher(*"as")
     ####
     ## Types
     ##

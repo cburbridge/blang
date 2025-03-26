@@ -1,15 +1,17 @@
+import copy
 from .tokeniser import TokenSpec
+import enum
 
 
 class ParseError(Exception): ...
 
 
 class Node:
-    def __init__(self, typ, token=None, children=None, parent=None, tokens=None):
+    def __init__(self, type, token=None, children=None, parent=None, tokens=None):
         self.token = token
         self.children = children or []
         self.parent = parent
-        self.typ = typ
+        self.type = self.typ = type
 
         self._tokens = tokens
         self._eaten = 0
@@ -45,21 +47,56 @@ def maybe(method):
     return wrapper
 
 
-def parser(method):
-    def wrapper(tokens):
-        try:
-            prototype_node = Node(method.__name__, tokens=tokens)
-            created_node = method(prototype_node)
-            if created_node:
-                # if the created node is not the prototype, maybe as we just want a child,
-                # then we need to stil consider the tokens eaten by the prototype as eatend by
-                # the chosed node
-                created_node._eaten = prototype_node._eaten
-            return created_node
-        except ParseError:
-            return None
+class NodeType(enum.StrEnum):
+    UNKNOWN = enum.auto()
+    BASE_TYPE = enum.auto()
+    REF_TYPE = enum.auto()
+    IDENTIFIER_REF = enum.auto()
+    ARRAY = enum.auto()
+    IDENTIFIER = enum.auto()
+    TYPED_IDENTIFER = enum.auto()
+    DECLARATION = enum.auto()
+    ASSIGNMENT = enum.auto()
+    INTEGER = enum.auto()
+    FLOAT = enum.auto()
+    RETURN = enum.auto()
+    FUNC_CALL = enum.auto()
+    PARAMETER_LIST = enum.auto()
+    FUNC_DEF = enum.auto()
+    BLOCK = enum.auto()
+    CAPTURED_EXPRESSION = enum.auto()
+    DE_REF = enum.auto()
+    BOOLEAN = enum.auto()
+    ADDITIVE = enum.auto()
+    TERM = enum.auto()
+    RELATIONAL = enum.auto()
+    LOGIC_AND = enum.auto()
+    LOGIC_OR = enum.auto()
+    IF_STATEMENT = enum.auto()
+    WHILE_LOOP = enum.auto()
+    BREAK = enum.auto()
+    FOR_LOOP = enum.auto()
+    MODULE = enum.auto()
 
-    return wrapper
+
+def parser(type=NodeType.UNKNOWN):
+    def parser(method):
+        def wrapper(tokens):
+            try:
+                prototype_node = Node(type, tokens=tokens)
+                created_node = method(prototype_node)
+                if created_node:
+                    # if the created node is not the prototype, maybe as we just want a child,
+                    # then we need to stil consider the tokens eaten by the prototype as eatend by
+                    # the chosed node
+                    created_node._eaten = prototype_node._eaten
+                return created_node
+            except ParseError:
+                return None
+
+        return wrapper
+
+    return parser
 
 
 def print_tree(node, indent=1):
@@ -85,7 +122,7 @@ def OneOf(*args):
     return _OneOf
 
 
-@parser
+@parser(NodeType.BASE_TYPE)
 def BaseType(node):
     for basetype in [
         TokenSpec.U8,
@@ -107,7 +144,7 @@ def BaseType(node):
     return None
 
 
-@parser
+@parser(NodeType.REF_TYPE)
 def RefType(node):
     node.eat(TokenSpec.LESS_THAN)
 
@@ -118,7 +155,7 @@ def RefType(node):
     return node
 
 
-@parser
+@parser(NodeType.IDENTIFIER_REF)
 def IdentifierRef(node):
     node.eat(TokenSpec.MORE_THAN)
     node.eat_child(Identifier)
@@ -126,7 +163,7 @@ def IdentifierRef(node):
     return node
 
 
-@parser
+@parser(NodeType.ARRAY)
 def Array(node):
     node.eat_child(OneOf(BaseType, RefType))
     node.eat(TokenSpec.LSQBRACKET)
@@ -138,13 +175,13 @@ def Array(node):
 Type = OneOf(Array, BaseType, RefType)  # order matters
 
 
-@parser
+@parser(NodeType.IDENTIFIER)
 def Identifier(node):
     node.eat(TokenSpec.IDENTIFIER, set_leaf=True)
     return node
 
 
-@parser
+@parser(NodeType.TYPED_IDENTIFER)
 def TypedIdentifier(node):
     node.eat_child(Identifier)
     node.eat(TokenSpec.COLON)
@@ -152,7 +189,7 @@ def TypedIdentifier(node):
     return node
 
 
-@parser
+@parser(NodeType.DECLARATION)
 def Declaration(node):
     node.eat_child(TypedIdentifier)
     if maybe(node.eat)(TokenSpec.ASSIGN):
@@ -160,7 +197,7 @@ def Declaration(node):
     return node
 
 
-@parser
+@parser(NodeType.ASSIGNMENT)
 def Assignment(node):
     node.eat_child(Identifier)
     node.eat(TokenSpec.ASSIGN)
@@ -168,22 +205,29 @@ def Assignment(node):
     return node
 
 
-@parser
-def Number(node):
-    if maybe(node.eat)(TokenSpec.INTEGER, set_leaf=True) or node.eat(
-        TokenSpec.FLOAT, set_leaf=True
-    ):
-        return node
+@parser(NodeType.INTEGER)
+def Integer(node):
+    node.eat(TokenSpec.INTEGER, set_leaf=True)
+    return node
 
 
-@parser
+@parser(NodeType.FLOAT)
+def Float(node):
+    node.eat(TokenSpec.FLOAT, set_leaf=True)
+    return node
+
+
+Number = OneOf(Integer, Float)
+
+
+@parser(NodeType.RETURN)
 def Return(node):
     node.eat(TokenSpec.RETURN)
     maybe(node.eat_child)(Expr)
     return node
 
 
-@parser
+@parser(NodeType.FUNC_CALL)
 def FuncCall(node):
     node.eat_child(Identifier)
     node.eat(TokenSpec.LPAREN)
@@ -196,7 +240,7 @@ def FuncCall(node):
     return node
 
 
-@parser
+@parser(NodeType.PARAMETER_LIST)
 def ParameterList(node):
     node.eat(TokenSpec.LPAREN)
     while True:
@@ -209,7 +253,7 @@ def ParameterList(node):
     return node
 
 
-@parser
+@parser(NodeType.FUNC_DEF)
 def FuncDef(node):
     node.eat(TokenSpec.DEF)
     node.eat_child(Identifier)
@@ -220,7 +264,7 @@ def FuncDef(node):
     return node
 
 
-@parser
+@parser(NodeType.BLOCK)
 def Block(node):
     node.eat(TokenSpec.LBRACE)
     while True:
@@ -231,7 +275,7 @@ def Block(node):
     return node
 
 
-@parser
+@parser(NodeType.CAPTURED_EXPRESSION)
 def CapturedExpression(node):
     node.eat(TokenSpec.LPAREN)
     node.eat_child(Expr)
@@ -239,7 +283,7 @@ def CapturedExpression(node):
     return node.children[0]
 
 
-@parser
+@parser(NodeType.DE_REF)
 def DeRef(node):
     node.eat(TokenSpec.LESS_THAN)
     node.eat_child(Additive)
@@ -247,7 +291,7 @@ def DeRef(node):
     return node
 
 
-@parser
+@parser(NodeType.BOOLEAN)
 def Boolean(node):
     if maybe(node.eat)(TokenSpec.TRUE, set_leaf=True) or maybe(node.eat)(
         TokenSpec.FALSE, set_leaf=True
@@ -261,8 +305,8 @@ Factor = OneOf(
 )
 
 
-@parser
-def Additive(node):
+# @parser(NodeType.ADDITIVE)
+def _Additive(node):
     node.eat_child(Term)
     if maybe(node.eat)(TokenSpec.MINUS, set_leaf=True) or maybe(node.eat)(
         TokenSpec.PLUS, set_leaf=True
@@ -272,8 +316,24 @@ def Additive(node):
     return node.children[0]
 
 
-@parser
-def Term(node):
+@parser(NodeType.ADDITIVE)
+def Additive(node):
+    node.eat_child(Term)
+    while maybe(node.eat)(TokenSpec.MINUS, set_leaf=True) or maybe(node.eat)(
+        TokenSpec.PLUS, set_leaf=True
+    ):
+        node.eat_child(Term)
+        left = copy.deepcopy(node)
+        node.children = []
+        node.children.append(left)
+
+    if len(node.children) == 1:
+        return node.children[0]
+    return node
+
+
+# @parser(NodeType.TERM)
+def _Term(node):
     node.eat_child(Factor)
     if maybe(node.eat)(TokenSpec.ASTRISK, set_leaf=True) or maybe(node.eat)(
         TokenSpec.DIVIDE, set_leaf=True
@@ -283,7 +343,23 @@ def Term(node):
     return node.children[0]
 
 
-@parser
+@parser(NodeType.TERM)
+def Term(node):
+    node.eat_child(Factor)
+    while maybe(node.eat)(TokenSpec.ASTRISK, set_leaf=True) or maybe(node.eat)(
+        TokenSpec.DIVIDE, set_leaf=True
+    ):
+        node.eat_child(Factor)
+        left = copy.deepcopy(node)
+        node.children = []
+        node.children.append(left)
+
+    if len(node.children) == 1:
+        return node.children[0]
+    return node
+
+
+@parser(NodeType.RELATIONAL)
 def Relational(node):
     node.eat_child(Additive)
     if (
@@ -299,7 +375,7 @@ def Relational(node):
     return node.children[0]
 
 
-@parser
+@parser(NodeType.LOGIC_AND)
 def LogicAnd(node):
     node.eat_child(Relational)
     if maybe(node.eat)(TokenSpec.AND):
@@ -308,7 +384,7 @@ def LogicAnd(node):
     return node.children[0]
 
 
-@parser
+@parser(NodeType.LOGIC_OR)
 def LogicOr(node):
     node.eat_child(LogicAnd)
     if maybe(node.eat)(TokenSpec.OR):
@@ -317,13 +393,62 @@ def LogicOr(node):
     return node.children[0]
 
 
+@parser(NodeType.IF_STATEMENT)
+def IfStatement(node):
+    node.eat(TokenSpec.IF)
+    node.eat_child(Expr)
+    node.eat_child(Block)
+    if maybe(node.eat)(TokenSpec.ELSE):
+        node.eat_child(Block)
+    return node
+
+
+@parser(NodeType.WHILE_LOOP)
+def WhileLoop(node):
+    node.eat(TokenSpec.WHILE)
+    node.eat_child(Expr)
+    node.eat_child(Block)
+    return node
+
+
+@parser(NodeType.BREAK)
+def Break(node):
+    node.eat(TokenSpec.BREAK)
+    return node
+
+
+@parser(NodeType.FOR_LOOP)
+def ForLoop(node):
+    node.eat(TokenSpec.FOR)
+    node.eat_child(Integer)
+    node.eat(TokenSpec.IDENTIFIER, set_child=True)
+    node.eat(TokenSpec.AS)
+    node.eat(TokenSpec.IDENTIFIER, set_child=True)
+    node.eat(TokenSpec.COMMA)
+    node.eat(TokenSpec.IDENTIFIER, set_child=True)
+    node.eat_child(Block)
+    return node
+
+
 Expr = LogicOr  # Additive
-Statement = OneOf(FuncCall, FuncDef, Assignment, Declaration, Return)
+Statement = OneOf(
+    FuncCall,
+    # FuncDef,
+    IfStatement,
+    WhileLoop,
+    ForLoop,
+    Assignment,
+    Declaration,
+    Return,
+    Break,
+)
+
+DecOrDef = OneOf(FuncDef, Declaration)
 
 
-@parser
+@parser(NodeType.MODULE)
 def Module(node):
-    while maybe(node.eat_child)(Statement):
+    while maybe(node.eat_child)(DecOrDef):
         continue
     if node._eaten != len(node._tokens):
         print("unexpected token ", node._tokens[node._eaten])
