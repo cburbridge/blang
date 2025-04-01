@@ -1,0 +1,171 @@
+from collections import defaultdict, ChainMap
+from dataclasses import dataclass, field
+import enum
+from blang.parser import TokenSpec, Node
+
+
+class VariableType(enum.StrEnum):
+    u8 = enum.auto()
+    u16 = enum.auto()
+    u32 = enum.auto()
+    u64 = enum.auto()
+    u128 = enum.auto()
+    i8 = enum.auto()
+    i16 = enum.auto()
+    i32 = enum.auto()
+    i64 = enum.auto()
+    i128 = enum.auto()
+    flt = enum.auto()
+
+
+TokenVariableTypeMap = {
+    TokenSpec.U8: VariableType.u8,
+    TokenSpec.U16: VariableType.u16,
+    TokenSpec.U32: VariableType.u32,
+    TokenSpec.U64: VariableType.u64,
+    TokenSpec.U128: VariableType.u128,
+    TokenSpec.I8: VariableType.i8,
+    TokenSpec.I16: VariableType.i16,
+    TokenSpec.I32: VariableType.i32,
+    TokenSpec.I64: VariableType.i64,
+    TokenSpec.I128: VariableType.i128,
+    TokenSpec.FLOAT: VariableType.flt,
+}
+
+TypeSizes = {
+    VariableType.u8: 1,
+    VariableType.u16: 2,
+    VariableType.u32: 4,
+    VariableType.u64: 8,
+    VariableType.u128: 16,
+    VariableType.i8: 1,
+    VariableType.i16: 2,
+    VariableType.i32: 4,
+    VariableType.i64: 8,
+    VariableType.i128: 16,
+    VariableType.flt: 8,
+}
+
+SizeReserves = {1: "resb", 2: "resw", 4: "resd", 8: "resq", 16: "resdq"}
+
+SizeDefiners = {1: "db", 2: "dw", 4: "dd", 8: "dq", 16: "do"}
+for t, s in TypeSizes.items():
+    SizeDefiners[t] = SizeDefiners[s]
+
+SizeSpecifiers = {1: "byte", 2: "word", 4: "dword", 8: "qword", 16: "oword"}
+# for t, s in TypeSizes.items():
+# SizeSpecifiers[t] = SizeSpecifiers[s]
+
+ArgumentRegistersBySize = {
+    8: ["rdi", "rsi", "rdx", "rcx", "r8", "r9"],
+    4: ["edi", "esi", "edx", "ecx", "r8d", "r9d"],
+    2: ["di", "si", "dx", "cx", "r8w", "r9w"],
+    1: ["dil", "sil", "dxl", "cxl", "r8b", "r9b"],
+}
+
+# GP Registers split by size
+RegistersPartial = {
+    r: {1: f"{r}b", 2: f"{r}w", 4: f"{r}d", 8: f"{r}"}
+    for r in ("r10", "r11", "r12", "r13", "r14", "r15")
+}
+RegistersPartial.update({"rax": {8: "rax", 4: "eax", 2: "ax", 1: "al"}})
+
+
+@dataclass
+class Register:
+    full_reg: str
+    size: int = 0
+    name: str | None = None
+
+    def set_in_use(self, size):
+        self.size = size
+        self.name = RegistersPartial[self.full_reg][size]
+
+    def __str__(self):
+        return self.name or self.full_reg
+
+
+@dataclass
+class Literal:
+    value: str
+    size: int
+
+    def __str__(self):
+        return self.value
+
+
+@dataclass
+class Variable:
+    identifier: str
+    type: VariableType
+
+    location: str | None = None
+    on_stack: bool = False
+    indirection_count: int = 0
+    external: bool = False
+    exported: bool = False
+    node: Node = None
+
+    @property
+    def size(self) -> int:
+        return 8 if self.indirection_count else self.base_type_size
+
+    @property
+    def base_type_size(self) -> int:
+        return TypeSizes[self.type]
+
+    def __str__(self):
+        return self.location
+
+
+@dataclass
+class Function(Variable):
+    parameters: list[Variable] = field(default_factory=list)
+
+
+@dataclass
+class Context:
+    variable_stack: ChainMap = field(default_factory=ChainMap)
+    locals_stack_size: int = 0
+    use_stack: bool = False
+    current_func: str = None
+    free_registers: list[Register] = field(
+        default_factory=lambda: [
+            Register("r10"),
+            Register("r11"),
+            Register("r12"),
+            Register("r13"),
+            Register("r14"),
+            Register("r15"),
+        ]
+    )
+    occupied_registers: list[Register] = field(default_factory=lambda: [])
+
+    @property
+    def globals_(self):
+        return self.variable_stack.maps[-1]
+
+    @property
+    def variables(self):
+        return self.variable_stack
+
+    def is_local_var(self, var):
+        return var in self.variable_stack.maps[0]
+
+    def pop_frame(self):
+        self.variable_stack = self.variable_stack.parents
+
+    def new_frame(self):
+        self.variable_stack = self.variable_stack.new_child()
+
+    def mark_free_if_reg(self, maybe_reg):
+        if maybe_reg in self.occupied_registers:
+            self.occupied_registers.remove(maybe_reg)
+            self.free_registers.append(maybe_reg)
+
+
+def test_var_stack():
+    c = Context()
+    c.globals_["a"] = 1
+    c.new_frame()
+    c._locals_["a"] = 5

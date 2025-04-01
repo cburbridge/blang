@@ -1,11 +1,13 @@
-from .parser import Module, print_tree, NodeType, Node, Expr
-from . import parser
-from .tokeniser import TokenSpec
+from blang.parser import Module, print_tree, NodeType, Node, Expr
+from blang import parser
+from blang.tokeniser import TokenSpec
 
 from collections import defaultdict
 from dataclasses import dataclass, field
 import enum
 import textwrap
+
+from .types import *
 
 
 class CompileError(Exception):
@@ -16,59 +18,6 @@ class CompileError(Exception):
     def __str__(self):
         return f"line {self.node.token.lineno} \n" + self.message
 
-
-class VariableType(enum.StrEnum):
-    u8 = enum.auto()
-    u16 = enum.auto()
-    u32 = enum.auto()
-    u64 = enum.auto()
-    u128 = enum.auto()
-    i8 = enum.auto()
-    i16 = enum.auto()
-    i32 = enum.auto()
-    i64 = enum.auto()
-    i128 = enum.auto()
-    flt = enum.auto()
-
-
-TokenVariableTypeMap = {
-    TokenSpec.U8: VariableType.u8,
-    TokenSpec.U16: VariableType.u16,
-    TokenSpec.U32: VariableType.u32,
-    TokenSpec.U64: VariableType.u64,
-    TokenSpec.U128: VariableType.u128,
-    TokenSpec.I8: VariableType.i8,
-    TokenSpec.I16: VariableType.i16,
-    TokenSpec.I32: VariableType.i32,
-    TokenSpec.I64: VariableType.i64,
-    TokenSpec.I128: VariableType.i128,
-    TokenSpec.FLOAT: VariableType.flt,
-}
-
-TypeSizes = {
-    VariableType.u8: 1,
-    VariableType.u16: 2,
-    VariableType.u32: 4,
-    VariableType.u64: 8,
-    VariableType.u128: 16,
-    VariableType.i8: 1,
-    VariableType.i16: 2,
-    VariableType.i32: 4,
-    VariableType.i64: 8,
-    VariableType.i128: 16,
-    VariableType.flt: 8,
-}
-
-SizeReserves = {1: "resb", 2: "resw", 4: "resd", 8: "resq", 16: "resdq"}
-
-SizeDefiners = {1: "db", 2: "dw", 4: "dd", 8: "dq", 16: "do"}
-
-ArgumentRegistersBySize = {
-    8: ["rdi", "rsi", "rdx", "rcx", "r8", "r9"],
-    4: ["edi", "esi", "edx", "ecx", "r8d", "r9d"],
-    2: ["di", "si", "dx", "cx", "r8w", "r9w"],
-    1: ["dil", "sil", "dxl", "cxl", "r8b", "r9b"],
-}
 
 _node_compilers = {}
 
@@ -86,65 +35,10 @@ def node_compiler(type=NodeType.UNKNOWN):
 
 def compile(node, context):
     asm = _node_compilers[node.type](node, context)
-    print("--" * 10)
-    print(node.type)
-    print(asm)
+    # print("--" * 10)
+    # print(node.type)
+    # print(asm)
     return asm
-
-
-@dataclass
-class Variable:
-    identifier: str
-    location: str
-    type: VariableType
-    on_stack: bool
-    external: bool = False
-    exported: bool = False
-    node: Node = None
-
-
-@dataclass
-class Function:
-    identifier: str
-    type: VariableType
-    parameters: list[VariableType]
-    external: bool
-    exported: bool
-    node: Node | None = None
-
-
-@dataclass
-class Context:
-    variable_stack: list[dict] = field(default_factory=lambda: [dict()])
-    locals_stack_size: int = 0
-    use_stack: bool = False
-    current_func: str = None
-    free_registers: list = field(
-        default_factory=lambda: [
-            "r10",
-            "r11",
-            "r12",
-            "r13",
-            "r14",
-            "r15",
-        ]
-    )
-    occupied_registers: list = field(default_factory=lambda: [])
-
-    @property
-    def globals_(self):
-        return self.variable_stack[0]
-
-    @property
-    def locals_(self):
-        return self.variable_stack[-1]
-
-    def pop_locals():
-        assert len(self.variable_stack) > 2
-        self.variable_stack = self.variable_stack[:-1]
-
-    def new_frame(self):
-        self.variable_stack.append({})
 
 
 @node_compiler(parser.NodeType.MODULE)
@@ -154,9 +48,9 @@ def compile_module(node, context: Context) -> str:
     declarations = list(
         filter(lambda x: x.type == parser.NodeType.DECLARATION, node.children)
     )
-    asm = ""
+    asm = []
     for declaration in declarations:
-        asm += compile(declaration, context) + "\n"
+        asm.extend(compile(declaration, context))
 
     # Collect funcs
     functions = list(
@@ -177,12 +71,12 @@ def compile_module(node, context: Context) -> str:
             external=False,
             exported=False,
         )
-        if f.identifier in context.globals_ or f.identifier in context.locals_:
+        if f.identifier in context.globals_ or f.identifier in context.variables:
             raise CompileError(f"Duplicate declaration of '{f.identifier}'", identifier)
         context.globals_[f.identifier] = f
     # pass 2 to compile definitions
     for function in functions:
-        asm += compile(function, context) + "\n"
+        asm.extend(compile(function, context))
     return asm
 
 
@@ -200,7 +94,7 @@ def compile_declaration(node, context: Context):
 
         if (
             identifier.token.text in context.globals_
-            or identifier.token.text in context.locals_
+            or identifier.token.text in context.variables
         ):
             raise CompileError(
                 f"Variable '{identifier.token.text}' is already defined.", identifier
@@ -218,12 +112,12 @@ def compile_declaration(node, context: Context):
 
         if init:
             dd = SizeDefiners[TypeSizes[type]]
-            return f"section .data\n{identifier.token.text}: {dd} {init.token.text}"
+            return ["section .data", f"{identifier.token.text}: {dd} {init.token.text}"]
 
         res = SizeReserves[TypeSizes[type]]
-        return f"section .bss\n{identifier.token.text}: {res} 1"
+        return ["section .bss", f"{identifier.token.text}: {res} 1"]
     else:
-        if identifier.token.text in context.locals_:
+        if identifier.token.text in context.variables:
             raise CompileError(
                 f"Variable '{identifier.token.text}' is already defined.", identifier
             )
@@ -237,9 +131,14 @@ def compile_declaration(node, context: Context):
             external=False,
             exported=False,
         )
-        context.locals_[var.identifier] = var
+        context.variables[var.identifier] = var
+        initialise = ()
+        if init:
+            sizespec = SizeSpecifiers[var.type]
+            reg, asm = compile_to_literal(init, context)
+            initialise = (*asm, f"mov {sizespec} {var.location}, {reg}")
 
-        return f"; {var.identifier} @ {var.location} .. {init}"
+        return [f"; {var.identifier} @ {var.location} .. {init}", *initialise]
 
 
 @node_compiler(NodeType.FUNC_DEF)
@@ -265,25 +164,26 @@ def comile_func(node, context: Context):
             location = ArgumentRegistersBySize[TypeSizes[param_type]][i]
 
         param_type = VariableType[param_type]
-        context.locals_[param_name] = Variable(
+        context.variables[param_name] = Variable(
             param_name,
             location=location,
             type=param_type,
             on_stack=False,
         )
 
-    print(context.locals_)
+    print(context.variables)
     blk = compile(block, context)
     return (
+        "",
+        f"section .text.{identifier.token.text}",
         f"{identifier.token.text}:",
         "push rbp",
         "mov rbp, rsp",
-        "sub rsp, {context.locals_stack_size}",
+        f"sub rsp, {context.locals_stack_size}",
         *blk,
-        f"""{context.current_func}___ret:",
-      "leave",
-      "ret"
-    """,
+        f"{context.current_func}___ret:",
+        "leave",
+        "ret",
     )
 
 
@@ -292,11 +192,11 @@ def compile_block(node, context: Context):
     # declarations = list(
     # filter(lambda x: x.type == parser.NodeType.DECLARATION, node.children)
     # )
-    asm = ""
+    asm = []
     # for declaration in declarations:
     # asm += compile(declaration, context) + "\n"
     for child in node.children:
-        asm += compile(child, context) + "\n"
+        asm.extend(compile(child, context))
     return asm
 
 
@@ -307,13 +207,13 @@ useies = []
 def compile_to_literal(node: Node, context: Context):
     # to and identifier or a register( or a number but no )
     if node.typ in (NodeType.IDENTIFIER,):
-        return f"[{node.token.text}]", ""
+        return context.variables[node.token.text].location, ""
     if node.typ in (NodeType.INTEGER):
         return node.token.text, ""
-    # take a register
-    # reg = context.free_registers[-1]
+
     asm = compile(node, context)
     try:
+        # last taken occupied is the reg that compiled into
         reg = context.occupied_registers[-1]
     except:
         raise
@@ -338,18 +238,14 @@ def test_compile_to_lit():
 
 @node_compiler(NodeType.ADDITIVE)
 def compile_additive(node: Node, context: Context):
-    prem = []
-
-    reg = context.free_registers.pop()
-    context.occupied_registers.append(reg)
-
     op = "add" if node.token == TokenSpec.PLUS else "sub"
     l, code_l = compile_to_literal(node.children[0], context)
 
     if l in context.occupied_registers:  # its a register so use i
-        context.occupied_registers.remove(reg)
-        context.free_registers.append(reg)
         reg = l
+    else:
+        reg = context.free_registers.pop()
+        context.occupied_registers.append(reg)
 
     if l != reg and l in context.occupied_registers:
         context.occupied_registers.remove(l)
@@ -362,7 +258,6 @@ def compile_additive(node: Node, context: Context):
         context.free_registers.append(r)
 
     return (
-        *prem,
         *code_l,
         *code_r,  #
         *((f"mov {reg}, {l}",) if l != reg else ()),
@@ -372,12 +267,21 @@ def compile_additive(node: Node, context: Context):
 
 @node_compiler(NodeType.ASSIGNMENT)
 def compile_assignment(node, context: Context):
-    return ["mov some to some"]
+    reg, asm = compile_to_literal(node.children[1], context)
+    var = context.variables[node.children[0].token.text]
+    sizespec = SizeSpecifiers[var.type]
+    return [*asm, f"mov {sizespec} {var.location}, {reg}"]
 
 
 @node_compiler(NodeType.RETURN)
 def compile_return(node, context: Context):
-    return [f"jmp {context.current_func}___ret"]
+    if len(node.children) == 1:
+        ret = node.children[0]
+        reg, asm = compile_to_literal(ret, context)
+        asm = (*asm, f"mov rax, {reg}")
+    else:
+        asm = []
+    return [*asm, f"jmp {context.current_func}___ret"]
 
 
 @node_compiler(NodeType.FUNC_CALL)
@@ -389,7 +293,7 @@ def compiler(text):
     tokens = list(TokenSpec.tokenise(text))
     for p in tokens:
         print(p.typ, p.text)
-    module = Moudule(tokens)
+    module = Module(tokens)
     print_tree(module)
     return compile(module, Context())
 
@@ -401,17 +305,21 @@ def test_dev():
         c: u32
 
         def add(p:u32, q:u64):u32 {
-          l: u32
+          l: u32=9
           v: u32
-          v = 100
-          return p*q*v
-        } 
-        def main() :u8 {
-           add(9,10)
-           return 0
+          v = 4+l
+          return p+q+v
+        }
+    
+        def main():u32{
+            v:u32 = 0
+            q:u32 = 9
+            s: u32 = 12
+            t:u32 = 6
+            return v+q+s-t
         } 
     """
-    print(compiler(program))
+    print("\n".join(compiler(program)))
     assert False, "Forced fail."
 
 

@@ -100,15 +100,18 @@ def parser(type=NodeType.UNKNOWN):
 
 
 def print_tree(node, indent=1):
-    print(
-        " " * (indent - 1),
-        "-",
-        node.typ,
-        "  =",
-        node.token.text if node.token else "XXXX",
-    )
-    for c in node.children:
-        print_tree(c, indent + 3)
+    if not node:
+        print(">>>???<<<")
+    else:
+        print(
+            " " * (indent - 1),
+            "-",
+            node.typ,
+            "  =",
+            node.token.text if node.token else "XXXX",
+        )
+        for c in node.children:
+            print_tree(c, indent + 3)
 
 
 def OneOf(*args):
@@ -441,6 +444,7 @@ Statement = OneOf(
     Declaration,
     Return,
     Break,
+    Block,
 )
 
 DecOrDef = OneOf(FuncDef, Declaration)
@@ -450,6 +454,7 @@ DecOrDef = OneOf(FuncDef, Declaration)
 def Module(node):
     while maybe(node.eat_child)(DecOrDef):
         continue
+    print(node.children)
     if node._eaten != len(node._tokens):
         print("unexpected token ", node._tokens[node._eaten])
         raise ParseError
