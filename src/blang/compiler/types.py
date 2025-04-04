@@ -71,31 +71,57 @@ RegistersPartial = {
 RegistersPartial.update({"rax": {8: "rax", 4: "eax", 2: "ax", 1: "al"}})
 
 
+class SizePropMixin:
+    @property
+    def size(self) -> int:
+        return 8 if self.indirection_count else self.base_type_size
+
+    @property
+    def base_type_size(self) -> int:
+        return TypeSizes[self.type]
+
+
 @dataclass
-class Register:
+class Register(SizePropMixin):
     full_reg: str
-    size: int = 0
-    name: str | None = None
+
+    # Similar to a variable
+    type: VariableType = None
+    indirection_count: int = 0
+
+    @property
+    def content_type_size(self):
+        return self.content_type and TypeSizes[self.content_type]
+
+    @property
+    def name(self):
+        return RegistersPartial[self.full_reg][self.size]
+
+    @property
+    def location(self):
+        return self.name
 
     def set_in_use(self, size):
-        self.size = size
-        self.name = RegistersPartial[self.full_reg][size]
+        pass
 
     def __str__(self):
         return self.name or self.full_reg
 
 
 @dataclass
-class Literal:
+class Literal(SizePropMixin):
     value: str
-    size: int
+
+    # Similar to a variable
+    type: VariableType = None
+    indirection_count: int = 0
 
     def __str__(self):
         return self.value
 
 
 @dataclass
-class Variable:
+class Variable(SizePropMixin):
     identifier: str
     type: VariableType
 
@@ -105,14 +131,6 @@ class Variable:
     external: bool = False
     exported: bool = False
     node: Node = None
-
-    @property
-    def size(self) -> int:
-        return 8 if self.indirection_count else self.base_type_size
-
-    @property
-    def base_type_size(self) -> int:
-        return TypeSizes[self.type]
 
     def __str__(self):
         return self.location
@@ -128,7 +146,7 @@ class Context:
     variable_stack: ChainMap = field(default_factory=ChainMap)
     locals_stack_size: int = 0
     use_stack: bool = False
-    current_func: str = None
+    current_func: Function = None
     free_registers: list[Register] = field(
         default_factory=lambda: [
             Register("r10"),

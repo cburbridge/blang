@@ -1,0 +1,33 @@
+a: u32
+b: u8 = 99
+c: u32
+d: u32
+
+def add(p:u32, q:u32) : u32 {
+    a : <<u32>>
+    return p + q
+}
+
+def pt_add(t:u8):u8 {
+    q:<u8> = 100
+    a:u8 = 99
+    return t
+}
+
+def main(): u64 {
+    v: u32 = 5
+    q: u32 = 7
+    p_v : <u32> = >v<
+    e:u32 = < >v< - 4> 
+    d = 10
+    q2:u64 = 99
+    q3:u64 = 98
+    q2 = q2 + q3
+    s: u32 = 10
+    t: u32 = 5
+    PTR: <u8> = 0
+    tt: u32 = add(5,10)
+    nope:u32 =v+q+s-t + d + tt + e
+    
+    return v+e
+} 

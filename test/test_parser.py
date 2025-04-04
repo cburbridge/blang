@@ -48,6 +48,19 @@ def test_assign():
     assert t._eaten == len(tokens)
 
 
+def test_assign_ref():
+    s = "<fisher> = 10"
+
+    tokens = list(TokenSpec.tokenise(s))
+    for t in tokens:
+        print(t.typ.name)
+    print()
+    t = Assignment(tokens)
+    print_tree(t)
+    # assert False
+    assert t._eaten == len(tokens)
+
+
 def test_term():
     s = "45 + 98-12 * (75.2 - 12)"
 
@@ -96,36 +109,36 @@ def test_base_type():
 
 
 def test_ref_type():
-    s = "ref ref u32"
+    s = "<<u32>>"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
     t = Type(tokens)
     print_tree(t)
-    assert t._eaten == 3
+    assert t._eaten == 5
     # assert isinstance(t, RefType)
     # assert False
 
 
 def test_paramlist():
-    s = "(fish:f64, face:ref i8) {}"
+    s = "(fish:f64, face:<i8>) {}"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
     t = ParameterList(tokens)
     assert t
-    assert t._eaten == 10
+    assert t._eaten == 11
     print(t.children)
     print_tree(t)
     # assert False
 
 
 def test_func():
-    s = """
-    def MyFun(fish:f64, face:ref i8):u8 {
+    #
+    s = """ def MyFun(fish:f64, face:<i8>):u8{
     
        a: u8 = 9
-       b: u8 = 10
-       c: u8 = a +b
-    
+       b: <u8> = >a<
+       c: u8 = a;
+       <b> = 9
        return c
     }
     """
@@ -198,7 +211,7 @@ def test_return():
 
 
 def test_types2():
-    s = "ref ref f64"
+    s = "<<f64>>"
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
     t = Type(tokens)

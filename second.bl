@@ -1,0 +1,14 @@
+d: u64
+v: u64 = 5
+q: u64 = 5
+  
+def main(): u64 {
+    p_v : <u64> = >v<;
+    pp_v: <<u64>> = >p_v<;
+    d = <<pp_v>>;
+    if true {
+	
+    }
+    
+    return v+q+d;
+} 

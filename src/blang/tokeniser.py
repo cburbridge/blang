@@ -52,6 +52,7 @@ class TokenSpec(enum.Enum):
     EQUAL = Matcher(*"==")
     NOT_EQ = Matcher(*"!=")
     COLON = Matcher(":")
+    TERMINATOR = Matcher(";")
     MINUS = Matcher("-")
     PLUS = Matcher("+")
     DIVIDE = Matcher("/")

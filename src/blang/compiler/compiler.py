@@ -24,7 +24,7 @@ class CompileError(Exception):
         self.node = node
 
     def __str__(self):
-        return f"line {self.node.token.lineno} \n" + self.message
+        return f"line {self.node._tokens[0].lineno} \n" + self.message
 
 
 _node_compilers = {}
@@ -42,7 +42,11 @@ def node_compiler(type=NodeType.UNKNOWN):
 
 
 def compile(node, context):
-    asm = _node_compilers[node.type](node, context)
+    try:
+        asm = _node_compilers[node.type](node, context)
+    except AttributeError as e:
+        print_tree(node)
+        raise CompileError(f"Bad times. {e}", node)
     return asm
 
 
@@ -109,7 +113,6 @@ def compile_module(node, context: Context) -> str:
 
 @node_compiler(parser.NodeType.DECLARATION)
 def compile_declaration(node, context: Context):
-    print_tree(node)
     var = typed_identifier_to_variable(node.children[0])
     init = None
     if len(node.children) > 1:
@@ -120,7 +123,9 @@ def compile_declaration(node, context: Context):
             raise CompileError("Can't initialise with non-constant.", init)
 
         if context.is_local_var(var.identifier):
-            raise CompileError(f"Variable '{var.identifier}' is already defined.", node)
+            raise CompileError(
+                f"Variable '{var.identifier}' is already defined.", node.children[0]
+            )
 
         var.location = f"[{var.identifier}]"
         context.globals_[var.identifier] = var
@@ -133,7 +138,9 @@ def compile_declaration(node, context: Context):
         return [f"{var.identifier}: {res} 1"]
     else:
         if context.is_local_var(var.identifier):
-            raise CompileError(f"Variable '{var.identifier}' is already defined.", node)
+            raise CompileError(
+                f"Variable '{var.identifier}' is already defined.", node.children[0]
+            )
 
         context.locals_stack_size += var.size
         var.location = f"[rbp - {context.locals_stack_size}]"
@@ -163,10 +170,10 @@ def comile_func(node, context: Context):
         )
     context.locals_stack_size = 0
     context.use_stack = True
-    context.current_func = function.identifier
+    context.current_func = function
     # Set the parameters as locals
     context.new_frame()
-    rbp_offset = 16
+    rbp_offset = 16  # todo why this? stack params are broke
     for i, parameter in enumerate(function.parameters):
         if i > 5:
             location = f"[rbp + {rbp_offset}]"
@@ -187,6 +194,7 @@ def comile_func(node, context: Context):
     context.current_func = None
     return [
         "",
+        f"global {function.identifier}",  # if function.exported
         f"{function.identifier}:",
         "push rbp",
         "mov rbp, rsp",
@@ -203,8 +211,45 @@ def compile_block(node, context: Context):
     asm = []
     context.new_frame()
     for child in node.children:
+        print(child)
         asm.extend(compile(child, context))
     context.pop_frame()
+    return asm
+
+
+@node_compiler(NodeType.IDENTIFIER_REF)
+def compile_ref(node, context: Context):
+    # lea rax, [q]        ; Load address of q into rax
+    var_name = node.children[0].token.text
+    var = context.variables.get(var_name)
+    if not var:
+        raise CompileError("Unknown variable '{var_name}'", node.children[0])
+
+    reg = context.free_registers.pop()
+    reg.type = var.type
+    reg.indirection_count = var.indirection_count + 1
+    context.occupied_registers.append(reg)
+    asm = [f"lea {reg}, {var.location}"]
+    return asm
+
+
+@node_compiler(NodeType.DE_REF)
+def compile_de_ref(node, context: Context):
+    ptr, code = compile_to_literal(node.children[0], context)
+    if ptr in context.occupied_registers:  # its a register so use it
+        reg = ptr
+    else:
+        reg = context.free_registers.pop()
+        context.occupied_registers.append(reg)
+        reg.type = ptr.type
+        reg.indirection_count = ptr.indirection_count
+
+    if reg.indirection_count < 1:
+        raise CompileError("Problem. Can't dereference a non-reference.", node)
+    reg.indirection_count -= 1
+    asm = [*code]  # f"mov qword {reg}, {reg.location}"]
+    # use the same register, drop size
+    asm.append(f"mov {SizeSpecifiers[reg.size]}  {reg}, [{reg.full_reg}] ;; DE-REF")
     return asm
 
 
@@ -216,8 +261,8 @@ def compile_to_literal(
         if node.token.text not in context.variables:
             raise CompileError(f"Unknown variable {node.token.text}", node)
         return context.variables[node.token.text], []
-    if node.typ in (NodeType.INTEGER):  # todo literal sizes
-        return Literal(node.token.text, 4), []
+    if node.typ in (NodeType.INTEGER):  # todo literal sizes and types
+        return Literal(node.token.text, type=VariableType.u32), []
 
     asm = compile(node, context)
     try:
@@ -254,37 +299,68 @@ def compile_additive(node: Node, context: Context):
     else:
         reg = context.free_registers.pop()
         reg.set_in_use(l.size)
+        reg.indirection_count = l.indirection_count
+        reg.type = l.type
         context.occupied_registers.append(reg)
 
-    if l != reg and l in context.occupied_registers:
+    if l != reg and l in context.occupied_registers:  # todo dead?
         context.occupied_registers.remove(l)
         context.free_registers.append(l)
 
     r, code_r = compile_to_literal(node.children[1], context)
-    if r.size != reg.size:
+    if not isinstance(r, Literal) and r.size != reg.size:
         raise CompileError(
-            f"Size mismatch. {r} is {r.size} bytes, {l} is {l.size} bytes. May need to squelch.",
+            f"Size mismatch. {r.identifier} is {r.size} bytes, {l.identifier} is {l.size} bytes. May need to squelch.",
             node,
+        )
+    if r.type != reg.type or (r.indirection_count > 1 != reg.indirection_count > 1):
+        print(
+            "WARNING: Type mismatch in addition. Sizes match so proceeding. May be bad."
         )
 
     if r in context.occupied_registers:
         context.occupied_registers.remove(r)
         context.free_registers.append(r)
 
+    ref_muliplier = 1
+    if reg.indirection_count:
+        reg.indirection_count -= 1
+        ref_muliplier = reg.size
+        reg.indirection_count += 1
+
     return [
         *code_l,
         *code_r,  #
         *((f"mov {reg}, {l}",) if l != reg else ()),
-        f"{op} {reg}, {r}",
+        *(f"{op} {reg}, {r}" for _ in range(ref_muliplier)),
     ]
 
 
 @node_compiler(NodeType.ASSIGNMENT)
 def compile_assignment(node, context: Context):
+    # compile what will be assigned to it
     reg, asm = compile_to_literal(node.children[1], context)
-    var = context.variables[node.children[0].token.text]
-    sizespec = SizeSpecifiers[var.size]
-    return [*asm, f"mov {sizespec} {var.location}, {reg}"]
+    if node.children[0].type == NodeType.DE_REF:
+        rval, get_addr_asm = compile_to_literal(node.children[0].children[0], context)
+        rval.indirection_count -= 1
+        sizespec = SizeSpecifiers[rval.size]
+        rval.indirection_count += 1
+        if rval not in context.occupied_registers:
+            # not a register, need to put it in one to be able to deref in x86
+            target_reg = context.free_registers[0]
+            load_value = [
+                f"mov {target_reg.full_reg}, {rval.location}",
+                f"mov {sizespec} [{target_reg.full_reg}], {reg}",
+            ]
+        else:
+            load_value = [f"mov {sizespec} [{rval.location}], {reg}"]
+
+        return [*asm, *get_addr_asm, *load_value]
+    else:
+        var = context.variables[node.children[0].token.text]
+        sizespec = SizeSpecifiers[var.size]
+
+        return [*asm, f"mov {sizespec} {var.location}, {reg}"]
 
 
 @node_compiler(NodeType.RETURN)
@@ -294,10 +370,12 @@ def compile_return(node, context: Context):
         reg, asm = compile_to_literal(ret, context)
         rax = Register("rax")
         rax.set_in_use(reg.size)
+        rax.type = reg.type
+        rax.indirection_count = reg.indirection_count
         asm = (*asm, "xor rax, rax", f"mov {rax}, {reg}")
     else:
         asm = []
-    return [*asm, f"jmp {context.current_func}___ret"]
+    return [*asm, f"jmp {context.current_func.identifier}___ret"]
 
 
 @node_compiler(NodeType.FUNC_CALL)
@@ -309,17 +387,12 @@ def compile_call(node, context: Context):
     except:
         raise CompileError(f"No function {function_name}.", node)
 
-    print(f"Func {function.identifier} : params {function.parameters}")
-    print_tree(node)
     param_fill_asm = []
     for parameter, i, parameter_decl in zip(
         node.children[1:], range(len(function.parameters)), function.parameters
     ):
         target_register = ArgumentRegistersBySize[parameter_decl.size][i]
         p_reg, asm = compile_to_literal(parameter, context)
-        print(f" -> {parameter.token.text}\n********\n")
-        print(f"{p_reg}  \n{asm}")
-        print(f"Put it into {target_register}")
         asm.append(
             f"mov {SizeSpecifiers[parameter_decl.size]} {target_register}, {p_reg}"
         )
@@ -328,8 +401,15 @@ def compile_call(node, context: Context):
 
     return_val = Register("rax")
     return_val.set_in_use(function.size)
+    return_val.type = function.type
+    return_val.indirection_count = function.indirection_count
     context.occupied_registers.append(return_val)
     return [*param_fill_asm, f"call {function_name}"]
+
+
+@node_compiler(NodeType.IF_STATEMENT)
+def compile_if(node, context: Context):
+    return compile_block(node.children[1], context)
 
 
 def compiler(text):
@@ -337,90 +417,7 @@ def compiler(text):
     # for p in tokens:
     # print(p.typ, p.text)
     module = Module(tokens)
-    # print_tree(module)
+    if not module:
+        return None
+    print_tree(module)
     return compile(module, Context())
-
-
-def test_dev():
-    """ """
-    program = """    
-    a: u32
-    b: u8 = 99
-    c: u32
-    d: u32
-
-    def add(p:u32, q:u32):u32 {
-      a : <<u32>>
-      return p + q
-    }
-
-    def pt_add(t:u8):u8 {
-        q:<u8> = 100
-        return t
-    }
-    
-    def main(): u32 {
-        v: u32 = 5
-        q: u32 = 5
-        d = 10
-        s: u32 = 10
-        t: u32 = 5
-        PTR: <u8> = 0
-        tt: u32 = add(5,10)
-        return v+q+s-t + d+tt
-    } 
-    """
-    asm = compiler(program)
-    asm.extend(
-        [
-            "",
-            "global _start",
-            "; --- ENTRY POINT ---",
-            "_start:",
-            "    call main          ; call main()",
-            "",
-            "    mov edi, eax       ; move main's return value to sys_exit arg",
-            "    mov eax, 60        ; sys_exit syscall",
-            "    syscall",
-        ]
-    )
-    print("\n".join(asm))
-    with open("/home/chris/code/blang/first.asm", "w") as f:
-        f.write("\n".join(asm))
-    assert False, "Forced fail."
-
-
-def test_dev_long():
-    program = """
-    a:u32
-    def fn():u8{
-        a: u32
-        b: <<u32>>
-        q: u32[10]
-        for 10 q as i, n {
-           n = i
-        }
-        a = 1
-        b = >a<
-        c: u32 = a * <b+5-6+10-c*3>
-        d: i32 = 0-1
-        b: bool = false and true
-        b = 54 < (6+100 > 10)
-
-        do_it(<d>)
-    }
-    
-    def do_it(i:<u32>) : <u32> {
-      if (i>10) {
-         i=0
-      }
-      while (i<10) {
-        i = i + 1
-        if i >3 {break}
-      }
-      return < >i< + 10 >
-    }
-    
-    """
-    compile(program, Context())
-    assert False, "Forced fail."
