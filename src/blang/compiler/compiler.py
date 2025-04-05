@@ -235,6 +235,7 @@ def compile_ref(node, context: Context):
 
 @node_compiler(NodeType.DE_REF)
 def compile_de_ref(node, context: Context):
+    # note, this is compiling only a an rval, in assignment this is not run
     ptr, code = compile_to_literal(node.children[0], context)
     if ptr in context.occupied_registers:  # its a register so use it
         reg = ptr
@@ -243,13 +244,19 @@ def compile_de_ref(node, context: Context):
         context.occupied_registers.append(reg)
         reg.type = ptr.type
         reg.indirection_count = ptr.indirection_count
+        code = [
+            *code,
+            f"mov {reg.full_reg}, {ptr}",
+        ]
 
     if reg.indirection_count < 1:
         raise CompileError("Problem. Can't dereference a non-reference.", node)
     reg.indirection_count -= 1
     asm = [*code]  # f"mov qword {reg}, {reg.location}"]
     # use the same register, drop size
-    asm.append(f"mov {SizeSpecifiers[reg.size]}  {reg}, [{reg.full_reg}] ;; DE-REF")
+    asm.append(
+        f"mov {SizeSpecifiers[reg.size]}  {reg}, [{reg.full_reg}]; ;cnt={reg.indirection_count}"
+    )
     return asm
 
 
@@ -340,22 +347,46 @@ def compile_additive(node: Node, context: Context):
 def compile_assignment(node, context: Context):
     # compile what will be assigned to it
     reg, asm = compile_to_literal(node.children[1], context)
+
     if node.children[0].type == NodeType.DE_REF:
-        rval, get_addr_asm = compile_to_literal(node.children[0].children[0], context)
-        rval.indirection_count -= 1
-        sizespec = SizeSpecifiers[rval.size]
-        rval.indirection_count += 1
-        if rval not in context.occupied_registers:
+        decount = 1
+        id_node = node.children[0].children[0]
+        while id_node.type == NodeType.DE_REF:
+            decount += 1
+            id_node = id_node.children[0]
+        lval, get_addr_asm = compile_to_literal(id_node, context)
+
+        if lval.indirection_count < decount:
+            raise CompileError("Tried to deref too many times in lval.", node)
+
+        lval.indirection_count -= decount
+        sizespec = SizeSpecifiers[lval.size]
+        lval.indirection_count += decount
+        if lval not in context.occupied_registers:
             # not a register, need to put it in one to be able to deref in x86
             target_reg = context.free_registers[0]
+            target_reg.set_in_use(8)
             load_value = [
-                f"mov {target_reg.full_reg}, {rval.location}",
-                f"mov {sizespec} [{target_reg.full_reg}], {reg}",
+                f"mov {target_reg.full_reg}, {lval.location}",
             ]
         else:
-            load_value = [f"mov {sizespec} [{rval.location}], {reg}"]
+            target_reg = lval
+            load_value = []
 
-        return [*asm, *get_addr_asm, *load_value]
+        # need to deref decount-1 more times now
+        load_value.extend(
+            (f"mov {target_reg.full_reg}, [{target_reg.full_reg}]",) * (decount - 1)
+        )
+
+        target_address = target_reg.full_reg
+
+        return [
+            *asm,
+            *get_addr_asm,
+            *load_value,
+            f"mov {sizespec} [{target_address}], {reg}",  # assign the value
+        ]
+
     else:
         var = context.variables[node.children[0].token.text]
         sizespec = SizeSpecifiers[var.size]
