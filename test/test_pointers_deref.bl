@@ -1,0 +1,15 @@
+d: u16
+v: u16 = 5
+q: u16 = 5
+  
+def main(): u16 {
+    p_v : <u16> = >v<;
+    pp_v: <<u16>> = >p_v<;
+    <p_v> = 9;
+    if true {
+	<p_v+1> = <p_v>;
+	<<pp_v>> =2;
+    }
+    
+    return v+q
+} 

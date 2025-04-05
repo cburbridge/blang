@@ -12,7 +12,7 @@ dependencies = [
 
 
 [project.scripts]
-blangc = "blang:__main__.main"
+blangc = "blang:cli.main"
 
 [dependency-groups]
 dev = [

@@ -2,7 +2,7 @@ import enum
 from blang.exceptions import UnexpectedCharacterError
 from dataclasses import dataclass
 from typing import List
-from .matcher import Matcher, Repeat
+from .matcher import Matcher, Repeat, CommentMatcher
 
 ALPHA_LOWER = "abcdefghijklmnopqrstuvwxyz"
 ALPHA_UPPER = ALPHA_LOWER.upper()
@@ -30,6 +30,7 @@ class Token:
 
 
 class TokenSpec(enum.Enum):
+    COMMENT = CommentMatcher("#")
     DEF = Matcher(*"def")
     RETURN = Matcher(*"return")
     NEWLINE = Matcher("\n")
@@ -164,47 +165,13 @@ class TokenSpec(enum.Enum):
                 succeeded = []
                 fed = 0
 
-                if token.typ not in (TokenSpec.WHITESPACE, TokenSpec.NEWLINE):
+                if token.typ not in (
+                    TokenSpec.WHITESPACE,
+                    TokenSpec.NEWLINE,
+                    TokenSpec.COMMENT,
+                ):
                     yield token
 
             # Don't process the added \0
             if c == "\0":  # p == len(input_text) - 1:
                 break
-
-
-"""
-        # If there are any active matchers left, that means there is some unconsumed data
-        # It could be that there is an active matcher that is looking for repeat, but
-        # could be closed if nothing else.
-
-
-        for token in active:
-            print(f"Condier {token.name}")
-            token_matcher = token.value
-
-            if token_matcher.feed("\0") == Matcher.FeedResult.DONE_NOT_EATEN:
-                if token not in (TokenSpec.WHITESPACE, TokenSpec.NEWLINE):
-                    # If the best of the succeeded token matchers was as good as this one
-                    # then yield it instead
-                    if len(succeeded) > 0:
-                        choice = sorted(
-                            succeeded, key=lambda t: t.value.eaten_count, reverse=True
-                        )[0]
-                        best_completed_token = Token(
-                            typ=choice,
-                            colno=col_number,
-                            lineno=line_number,
-                            text=choice.value.content,
-                        )
-                        if len(best_completed_token.text) == len(token_matcher.content):
-                            yield best_completed_token
-                            break
-
-                    yield Token(
-                        typ=token,
-                        colno=col_number,
-                        lineno=line_number,
-                        text=token_matcher.content,
-                    )
-                    break
-"""

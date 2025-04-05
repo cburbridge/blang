@@ -111,3 +111,39 @@ class Matcher:
         self.content = ""
         self.active_exp = copy.deepcopy(self.exp)  # coppies the repeats too, nice
         self.is_failed = False
+
+
+class CommentMatcher:
+    """Specialist matcher for catching comments."""
+
+    def __init__(self, comment_char="#"):
+        self.comment_char = comment_char
+        self.reset()
+
+    @property
+    def active(self):
+        return len(self.active_exp) > 0 and self.eaten_count > 0
+
+    @property
+    def eaten_count(self):
+        return len(self.content)
+
+    def feed(self, c):
+        if self.is_failed:
+            return Matcher.FeedResult.FAIL
+        if self.in_comment:
+            if c == "\n":
+                return Matcher.FeedResult.DONE_NOT_EATEN
+            self.content += c
+            return Matcher.FeedResult.CONTINUE
+        if c == self.comment_char:
+            self.in_comment = True
+            self.content += c
+            return Matcher.FeedResult.CONTINUE
+        self.is_failed = True
+        return Matcher.FeedResult.FAIL
+
+    def reset(self):
+        self.content = ""
+        self.in_comment = False
+        self.is_failed = False
