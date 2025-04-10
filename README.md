@@ -1,3 +1,19 @@
+# todo
+for loops
+multiplication
+logicals
+if
+while
+strings
+syscalls
+structs
+negatives
+floats
+continue
+break
+for loops on non bytes - fix increments
+squelching
+
 # Grammar
 
 Statement       -> Assignment | FuncDef | FuncCall |
@@ -34,8 +50,17 @@ ForLoop         -> 'for' '(' Assignment? ';' Expr? ';' Assignment? ')' Block
 
 q:u32[100]
 
-for 10 q as n, i {
+for q as n, i {
 }
+
+for 1..100 step 5 as i:u8 {
+}
+
+for 1..100 : 5 as i:u8 {
+}
+
+u8|a|
+
 
 
 a: u32

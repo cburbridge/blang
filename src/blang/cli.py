@@ -1,7 +1,8 @@
 import sys
 import click
 import subprocess
-from blang.compiler.compiler import compiler
+from blang.compiler.compiler import compiler, CompileError
+from blang.parser import ParseError
 import tempfile
 from pathlib import Path
 
@@ -50,15 +51,20 @@ def cli(input_files, output_file, debug=False):
             src = in_f.read()
         with tempfile.NamedTemporaryFile("w") as tmp:
             click.echo(f"Compiling {file}")
-            asm = compiler(src)
-            if not asm:
-                sys.exit(1)
-            tmp.write("\n".join(asm))
+            try:
+                asm = compiler(src)
+            except CompileError as e:
+                click.echo(f"Compilation error:\n {str(e)}", err=True)
+                return
+            except ParseError as e:
+                click.echo(f"Syntax error:\n {str(e)}", err=True)
+                return
+            tmp.write("\n".join(asm or []))
             tmp.flush()
             if debug:
                 print("******" * 5)
                 print({file})
-                for i, l in enumerate(asm):
+                for i, l in enumerate(asm or []):
                     print(f"{i + 1}\t{l}")
             cmd = ["nasm", "-f", "elf64", tmp.name, "-o", tmp.name + ".o"]
             click.echo(">" + " ".join(cmd))

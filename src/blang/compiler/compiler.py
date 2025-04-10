@@ -7,6 +7,7 @@ from blang.compiler.types import (
     Literal,
     Register,
     Variable,
+    Array,
     Function,
     Context,
     ArgumentRegistersBySize,
@@ -15,6 +16,8 @@ from blang.compiler.types import (
     SizeSpecifiers,
     SizeReserves,
     SizeDefiners,
+    AddressPointer,
+    RBP,
 )
 
 
@@ -60,7 +63,20 @@ def type_to_base_type_and_indirection_count(type) -> (VariableType, int):
 
 def typed_identifier_to_variable(typed_identifier: Node):
     identifier, type = typed_identifier.children
+    array_size = 0
+    if type.type == NodeType.ARRAY:
+        array_size = int(type.children[1].token.text)
+        type = type.children[0]
+
     type, refs = type_to_base_type_and_indirection_count(type)
+
+    if array_size > 0:
+        return Array(
+            identifier=identifier.token.text,
+            type=type,
+            indirection_count=refs,
+            length=array_size,
+        )
 
     return Variable(identifier=identifier.token.text, type=type, indirection_count=refs)
 
@@ -127,7 +143,7 @@ def compile_declaration(node, context: Context):
                 f"Variable '{var.identifier}' is already defined.", node.children[0]
             )
 
-        var.location = f"[{var.identifier}]"
+        var.location = AddressPointer(var.identifier)
         context.globals_[var.identifier] = var
 
         if init:
@@ -135,15 +151,17 @@ def compile_declaration(node, context: Context):
             return [f"{var.identifier}: {dd} {init.token.text}"]
 
         res = SizeReserves[var.size]
-        return [f"{var.identifier}: {res} 1"]
+        count = 1 if not isinstance(var, Array) else var.length
+        return [f"{var.identifier}: {res} {count}"]
     else:
         if context.is_local_var(var.identifier):
             raise CompileError(
                 f"Variable '{var.identifier}' is already defined.", node.children[0]
             )
 
-        context.locals_stack_size += var.size
-        var.location = f"[rbp - {context.locals_stack_size}]"
+        count = 1 if not isinstance(var, Array) else var.length
+        context.locals_stack_size += count * var.size
+        var.location = RBP(-context.locals_stack_size)
         context.variables[var.identifier] = var
         initialise = ()
         if init:
@@ -176,7 +194,7 @@ def comile_func(node, context: Context):
     rbp_offset = 16  # todo why this? stack params are broke
     for i, parameter in enumerate(function.parameters):
         if i > 5:
-            location = f"[rbp + {rbp_offset}]"
+            location = RBP(-rbp_offset)
             rbp_offset += parameter.size
         else:
             location = ArgumentRegistersBySize[parameter.size][i]
@@ -257,6 +275,35 @@ def compile_de_ref(node, context: Context):
     asm.append(
         f"mov {SizeSpecifiers[reg.size]}  {reg}, [{reg.full_reg}]; ;cnt={reg.indirection_count}"
     )
+    return asm
+
+
+@node_compiler(NodeType.ARRAY_ITEM)
+def compile_array_item(node, context: Context):
+    # note, this is compiling only as an rval, in assignment this is not run
+    identifier_node, index_expr = node.children
+    index, code = compile_to_literal(index_expr, context)
+    identifier = context.variables[identifier_node.token.text]
+
+    reg = context.free_registers.pop()
+    tmp = context.free_registers[0]
+    tmp.type = index.type
+    tmp.indirection_count = 0
+    context.occupied_registers.append(reg)
+    reg.type = identifier.type
+    reg.indirection_count = index.indirection_count
+    code = [
+        *code,
+        f"lea {reg.full_reg}, {identifier}",
+        f"xor {tmp.full_reg}, {tmp.full_reg}",  # horid temp to zero upper bits for addition
+        f"mov {tmp}, {index}",
+        *((f"add {reg.full_reg}, {tmp.full_reg}",) * identifier.size),
+    ]
+
+    asm = [*code]
+    # use the same register, drop size
+    asm.append(f"mov {SizeSpecifiers[reg.size]}  {reg}, [{reg.full_reg}] ; load it ")
+    context.mark_free_if_reg(index)
     return asm
 
 
@@ -380,6 +427,16 @@ def compile_assignment(node, context: Context):
 
         target_address = target_reg.full_reg
 
+        if not isinstance(reg, Register):
+            tmp = context.free_registers[1]
+            tmp.type = lval.type
+            tmp.indirection_count = 0
+            load_value.append(f"mov {tmp.location}, {reg}  ; got to be in a reg")
+            reg = tmp
+
+        context.mark_free_if_reg(reg)
+        context.mark_free_if_reg(target_reg)
+
         return [
             *asm,
             *get_addr_asm,
@@ -387,10 +444,46 @@ def compile_assignment(node, context: Context):
             f"mov {sizespec} [{target_address}], {reg}",  # assign the value
         ]
 
+    elif (
+        node.children[0].type == NodeType.ARRAY_ITEM
+    ):  # todo I don't like this specialism branching
+        identifier_node, index_expr = node.children[0].children
+        index, code = compile_to_literal(index_expr, context)
+        identifier = context.variables[identifier_node.token.text]
+        sizespec = SizeSpecifiers[identifier.size]
+        if index in context.occupied_registers:  # its a register so use it
+            target_address = index
+        else:
+            target_address = context.free_registers.pop()
+            context.occupied_registers.append(target_address)
+            target_address.type = identifier.type
+            target_address.indirection_count = identifier.indirection_count + 1
+            tmp = context.free_registers[0]
+            tmp.type = index.type
+            tmp.indirection_count = 0
+            code = [
+                *code,
+                f"lea {target_address.full_reg}, {identifier}",
+                f"xor {tmp.full_reg}, {tmp.full_reg}",  # horid temp to zero upper bits for addition
+                f"mov {tmp}, {index}",
+                *(
+                    (f"add {target_address.full_reg}, {tmp.full_reg}",)
+                    * identifier.size
+                ),
+            ]
+
+        asm = [
+            *code,
+            f"mov {sizespec} [{target_address}], {reg}   ; {identifier}[...]=... ",  # assign the value
+        ]
+        context.mark_free_if_reg(reg)
+        context.mark_free_if_reg(target_address)
+        return asm
     else:
         var = context.variables[node.children[0].token.text]
         sizespec = SizeSpecifiers[var.size]
 
+        context.mark_free_if_reg(reg)
         return [*asm, f"mov {sizespec} {var.location}, {reg}"]
 
 
@@ -438,6 +531,91 @@ def compile_call(node, context: Context):
     return [*param_fill_asm, f"call {function_name}"]
 
 
+@node_compiler(NodeType.FOR_ARRAY_LOOP)
+def compile_for(node: Node, context: Context):
+    array_id, index_id, element, block = node.children
+    loop_id = f"loop_{node.id}"
+    array = context.variables.get(array_id.token.text)
+    if not array:
+        raise CompileError(f"Unknown variable {array_id.token.text}", node)
+    if not isinstance(array, Array):
+        raise CompileError(
+            f"{array_id} is not an array. For loops are for arrays.", node
+        )
+    context.new_frame()
+
+    # index variable creation
+    index = Variable(identifier=index_id.token.text, type=VariableType.u64)
+    context.locals_stack_size += index.size
+    index.location = RBP(-context.locals_stack_size)
+    context.variables[index.identifier] = index
+
+    element = Variable(
+        identifier=element.token.text, type=array.type, indirection_count=1
+    )
+    context.locals_stack_size += element.size
+    element.location = RBP(-context.locals_stack_size)
+    context.variables[element.identifier] = element
+
+    loop_body = compile(block, context)
+    asm = [
+        f".{loop_id}_begin",
+        f"mov qword {index.location}, 0        ; zero index",
+        f"lea rax, {array.location}",
+        f"  mov {element.location}, rax",
+        f".{loop_id}_start:",
+        f"  mov eax, {index.location}",
+        f"  cmp eax, {array.length}",
+        f"  jge .{loop_id}_end",
+        *loop_body,
+        f".{loop_id}_tail:",
+        f"  add qword {element.location}, {element.base_type_size}",
+        f"  add qword {index.location}, 1        ; inc index",
+        f"   jmp .{loop_id}_start",
+        f".{loop_id}_end:",
+    ]
+
+    context.pop_frame()
+    return asm
+
+
+@node_compiler(NodeType.FOR_RANGE_LOOP)
+def compile_for_range(node: Node, context: Context):
+    range_node, identifier_node, block = node.children
+    loop_id = f"loop_{node.id}"
+    var = typed_identifier_to_variable(identifier_node)
+    # todo check the var is an integer...
+
+    context.new_frame()
+    context.locals_stack_size += var.size
+    var.location = RBP(-context.locals_stack_size)
+    context.variables[var.identifier] = var
+
+    start = int(range_node.children[0].token.text)
+    end = int(range_node.children[1].token.text)
+    step = int(range_node.children[2].token.text) if len(range_node.children) > 2 else 1
+
+    loop_body = compile(block, context)
+    reg_for_comparer = Register("rax")
+    reg_for_comparer.type = var.type
+    asm = [
+        f".{loop_id}_begin",
+        f"mov {var.sizespec} {var.location}, {start}        ; range start",
+        f".{loop_id}_start:",
+        f"  mov {reg_for_comparer}, {var.location}",
+        f"  cmp {reg_for_comparer}, {end}",
+        f"  jge .{loop_id}_end",
+        *loop_body,
+        f".{loop_id}_tail:",
+        f"  add {var.sizespec} {var.location}, {step}        ; inc index",
+        f"   jmp .{loop_id}_start",
+        f".{loop_id}_end:",
+    ]
+
+    context.pop_frame()
+    return asm
+
+
 @node_compiler(NodeType.IF_STATEMENT)
 def compile_if(node, context: Context):
     return compile_block(node.children[1], context)
@@ -448,6 +626,7 @@ def compiler(text):
     # for p in tokens:
     # print(p.typ, p.text)
     module = Module(tokens)
+
     if not module:
         return None
     print_tree(module)

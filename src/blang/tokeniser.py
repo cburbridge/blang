@@ -30,6 +30,7 @@ class Token:
 
 
 class TokenSpec(enum.Enum):
+    # STRING
     COMMENT = CommentMatcher("#")
     DEF = Matcher(*"def")
     RETURN = Matcher(*"return")
@@ -59,7 +60,8 @@ class TokenSpec(enum.Enum):
     DIVIDE = Matcher("/")
     ASTRISK = Matcher("*")
     COMMA = Matcher(",")
-    REF = Matcher(*"&")
+    DOTDOT = Matcher(*"..")
+    # REF = Matcher(*"&")
 
     STRING = Matcher(QUOTE, Repeat(ANY), QUOTE)
     FLOAT = Matcher(Repeat(NUMERAL, min=0), PERIOD, Repeat(NUMERAL, min=1))
@@ -85,13 +87,12 @@ class TokenSpec(enum.Enum):
     U16 = Matcher(*"u16")
     U32 = Matcher(*"u32")
     U64 = Matcher(*"u64")
-    U128 = Matcher(*"u128")
+
     I8 = Matcher(*"i8")
     I16 = Matcher(*"i16")
     I32 = Matcher(*"i32")
     I64 = Matcher(*"i64")
-    I128 = Matcher(*"i128")
-    F32 = Matcher(*"f32")
+
     F64 = Matcher(*"f64")
     BOOL = Matcher(*"bool")
     ####

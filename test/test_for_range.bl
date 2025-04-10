@@ -1,0 +1,11 @@
+# expected_exit_code = 27
+
+def main(): u64 {
+    total:u64=0
+    
+    for 2..8:1 as i:u64 {
+        total = total + i
+    }
+    return total;
+   
+} 

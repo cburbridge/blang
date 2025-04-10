@@ -11,6 +11,8 @@ from blang.parser import (
     Return,
     Declaration,
     Identifier,
+    ArrayItem,
+    Range,
     print_tree,
 )
 
@@ -220,3 +222,62 @@ def test_types2():
     print(t.children)
     print_tree(t)
     # assert False
+
+
+def test_array():
+    s = "s:u8[10]"
+    tokens = list(TokenSpec.tokenise(s))
+    print([t.typ.name for t in tokens])
+    t = Declaration(tokens)
+    assert t
+    assert t._eaten == len(tokens)
+    print(t.children)
+    print_tree(t)
+    # assert False
+
+
+def test_array_assign():
+    s = "q=s[10]"
+    tokens = list(TokenSpec.tokenise(s))
+    t = Assignment(tokens)
+    assert t
+    print_tree(t)
+    assert t._eaten == len(tokens)
+
+
+def test_array_assign_lval():
+    s = "s[10]=99"
+    tokens = list(TokenSpec.tokenise(s))
+    t = Assignment(tokens)
+    assert t
+    print_tree(t)
+    assert t._eaten == len(tokens)
+
+
+def test_array_item():
+    s = "s[10]"
+    tokens = list(TokenSpec.tokenise(s))
+    t = ArrayItem(tokens)
+    assert t
+    assert t._eaten == len(tokens)
+    print_tree(t)
+
+
+def test_range():
+    s = "1..100:5"
+    tokens = list(TokenSpec.tokenise(s))
+    print([t.typ.name for t in tokens])
+    t = Range(tokens)
+    assert t
+    assert t._eaten == len(tokens)
+    print_tree(t)
+
+
+def test_range_no_step():
+    s = "1..100"
+    tokens = list(TokenSpec.tokenise(s))
+    print([t.typ.name for t in tokens])
+    t = Range(tokens)
+    assert t
+    assert t._eaten == len(tokens)
+    print_tree(t)

@@ -9,12 +9,12 @@ class VariableType(enum.StrEnum):
     u16 = enum.auto()
     u32 = enum.auto()
     u64 = enum.auto()
-    u128 = enum.auto()
+
     i8 = enum.auto()
     i16 = enum.auto()
     i32 = enum.auto()
     i64 = enum.auto()
-    i128 = enum.auto()
+
     flt = enum.auto()
 
 
@@ -23,12 +23,10 @@ TokenVariableTypeMap = {
     TokenSpec.U16: VariableType.u16,
     TokenSpec.U32: VariableType.u32,
     TokenSpec.U64: VariableType.u64,
-    TokenSpec.U128: VariableType.u128,
     TokenSpec.I8: VariableType.i8,
     TokenSpec.I16: VariableType.i16,
     TokenSpec.I32: VariableType.i32,
     TokenSpec.I64: VariableType.i64,
-    TokenSpec.I128: VariableType.i128,
     TokenSpec.FLOAT: VariableType.flt,
 }
 
@@ -37,12 +35,10 @@ TypeSizes = {
     VariableType.u16: 2,
     VariableType.u32: 4,
     VariableType.u64: 8,
-    VariableType.u128: 16,
     VariableType.i8: 1,
     VariableType.i16: 2,
     VariableType.i32: 4,
     VariableType.i64: 8,
-    VariableType.i128: 16,
     VariableType.flt: 8,
 }
 
@@ -68,7 +64,9 @@ RegistersPartial = {
     r: {1: f"{r}b", 2: f"{r}w", 4: f"{r}d", 8: f"{r}"}
     for r in ("r10", "r11", "r12", "r13", "r14", "r15")
 }
-RegistersPartial.update({"rax": {8: "rax", 4: "eax", 2: "ax", 1: "al"}})
+RegistersPartial.update(
+    {"rax": {8: "rax", 4: "eax", 2: "ax", 1: "al"}, "rbp": {8: "rbp"}}
+)
 
 
 class SizePropMixin:
@@ -79,6 +77,10 @@ class SizePropMixin:
     @property
     def base_type_size(self) -> int:
         return TypeSizes[self.type]
+
+    @property
+    def sizespec(self):
+        return SizeSpecifiers[self.size]
 
 
 @dataclass
@@ -96,6 +98,9 @@ class Register(SizePropMixin):
     @property
     def name(self):
         return RegistersPartial[self.full_reg][self.size]
+
+    def partial(self, size):
+        return RegistersPartial[self.full_reg][size]
 
     @property
     def location(self):
@@ -133,7 +138,52 @@ class Variable(SizePropMixin):
     node: Node = None
 
     def __str__(self):
-        return self.location
+        return str(self.location)
+
+
+@dataclass
+class Array(SizePropMixin):
+    identifier: str
+    type: VariableType
+
+    location: str | None = None
+    on_stack: bool = False
+    indirection_count: int = 0
+    external: bool = False
+    exported: bool = False
+    node: Node = None
+    length: int = 1  # Number of elements if an array
+
+    def __str__(self):
+        return str(self.location)
+
+
+@dataclass
+class AddressPointer:
+    # in a register
+    base: Register | str
+    offset: int = 0
+
+    def __str__(self):
+        return f"[{self.address}]"
+
+    @property
+    def address(self):
+        return f"{self.base}{f' + {self.offset}' if self.offset > 0 else f' - {abs(self.offset)}' if self.offset < 0 else ''}"
+
+
+def test_ap():
+    a = RBP(-9)
+    print(f"{a}")
+    a = RBP(9)
+    print(f"{a}")
+    a = RBP(0)
+    print(f"{a}")
+    assert False
+
+
+def RBP(offset):
+    return AddressPointer("rbp", offset)
 
 
 @dataclass

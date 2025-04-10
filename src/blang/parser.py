@@ -42,16 +42,16 @@ class Node:
             return True
         raise ParseError(f"Expected {ChildType}", self)
 
+    @property
+    def id(self):
+        return f"{self._tokens[0].lineno}_{self._tokens[0].colno}"
+
 
 def maybe(method):
     def wrapper(*args, **kwargs):
         try:
             return method(*args, **kwargs)
-
         except ParseError as p:
-            # print(f"bailing {method.__name__}")
-            # print(f"   -> {p}")
-
             return False
 
     return wrapper
@@ -76,6 +76,7 @@ class NodeType(enum.StrEnum):
     BLOCK = enum.auto()
     CAPTURED_EXPRESSION = enum.auto()
     DE_REF = enum.auto()
+    ARRAY_ITEM = enum.auto()
     BOOLEAN = enum.auto()
     ADDITIVE = enum.auto()
     TERM = enum.auto()
@@ -85,7 +86,9 @@ class NodeType(enum.StrEnum):
     IF_STATEMENT = enum.auto()
     WHILE_LOOP = enum.auto()
     BREAK = enum.auto()
-    FOR_LOOP = enum.auto()
+    RANGE = enum.auto()
+    FOR_ARRAY_LOOP = enum.auto()
+    FOR_RANGE_LOOP = enum.auto()
     MODULE = enum.auto()
 
 
@@ -98,12 +101,10 @@ def parser(type=NodeType.UNKNOWN):
                 if created_node:
                     # if the created node is not the prototype, maybe as we just want a child,
                     # then we need to stil consider the tokens eaten by the prototype as eatend by
-                    # the chosed node
+                    # the chosen node
                     created_node._eaten = prototype_node._eaten
                 return created_node
             except ParseError as p:
-                # print(f"bailing {method.__name__} @ {tokens[0]}")
-                # print(f"   -> {p}")
                 return None
 
         return wrapper
@@ -144,13 +145,10 @@ def BaseType(node):
         TokenSpec.U16,
         TokenSpec.U32,
         TokenSpec.U64,
-        TokenSpec.U128,
         TokenSpec.I8,
         TokenSpec.I16,
         TokenSpec.I32,
         TokenSpec.I64,
-        TokenSpec.I128,
-        TokenSpec.F32,
         TokenSpec.F64,
         TokenSpec.BOOL,
     ]:
@@ -222,7 +220,16 @@ def DeRef(node):
     return node
 
 
-LVal = OneOf(DeRef, Identifier)
+@parser(NodeType.ARRAY_ITEM)
+def ArrayItem(node):
+    node.eat_child(Identifier)
+    node.eat(TokenSpec.LSQBRACKET)
+    node.eat_child(Additive)
+    node.eat(TokenSpec.RSQBRACKET)
+    return node
+
+
+LVal = OneOf(DeRef, ArrayItem, Identifier)  # order matters here
 
 
 @parser(NodeType.ASSIGNMENT)
@@ -324,19 +331,15 @@ def Boolean(node):
 
 
 Factor = OneOf(
-    FuncCall, Number, Boolean, Identifier, IdentifierRef, CapturedExpression, DeRef
+    FuncCall,
+    Number,
+    Boolean,
+    ArrayItem,  # oh no, order matters :-(
+    Identifier,
+    IdentifierRef,
+    CapturedExpression,
+    DeRef,
 )
-
-
-# @parser(NodeType.ADDITIVE)
-def _Additive(node):
-    node.eat_child(Term)
-    if maybe(node.eat)(TokenSpec.MINUS, set_leaf=True) or maybe(node.eat)(
-        TokenSpec.PLUS, set_leaf=True
-    ):
-        node.eat_child(Additive)
-        return node
-    return node.children[0]
 
 
 @parser(NodeType.ADDITIVE)
@@ -441,10 +444,9 @@ def Break(node):
     return node
 
 
-@parser(NodeType.FOR_LOOP)
-def ForLoop(node):
+@parser(NodeType.FOR_ARRAY_LOOP)
+def ForArrayLoop(node):
     node.eat(TokenSpec.FOR)
-    node.eat_child(Integer)
     node.eat(TokenSpec.IDENTIFIER, set_child=True)
     node.eat(TokenSpec.AS)
     node.eat(TokenSpec.IDENTIFIER, set_child=True)
@@ -453,6 +455,28 @@ def ForLoop(node):
     node.eat_child(Block)
     return node
 
+
+@parser(NodeType.FOR_RANGE_LOOP)
+def ForRangeLoop(node):
+    node.eat(TokenSpec.FOR)
+    node.eat_child(Range)
+    node.eat(TokenSpec.AS)
+    node.eat_child(TypedIdentifier)
+    node.eat_child(Block)
+    return node
+
+
+@parser(NodeType.RANGE)
+def Range(node):
+    node.eat_child(Integer)
+    node.eat(TokenSpec.DOTDOT)
+    node.eat_child(Integer)
+    if maybe(node.eat)(TokenSpec.COLON):
+        node.eat_child(Integer)
+    return node
+
+
+ForLoop = OneOf(ForArrayLoop, ForRangeLoop)
 
 Expr = LogicOr  # Additive
 Statement = OneOf(
@@ -476,6 +500,6 @@ def Module(node):
     while maybe(node.eat_child)(DecOrDef):
         continue
     if node._eaten != len(node._tokens):
-        print("unexpected token ", node._tokens[node._eaten])
+        print("oh bugger unexpected token ", node._tokens[node._eaten])
         raise ParseError(f"unexpected token {node._tokens[node._eaten]}", node)
     return node

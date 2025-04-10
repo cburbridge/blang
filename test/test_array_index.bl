@@ -1,0 +1,26 @@
+# expected_exit_code = 52
+
+  
+def main(): u32 {
+    local_array: u8[4]
+    q:u32 = 32000
+    i:u16 = 0
+    local_array[0] = 20
+    i=i+1
+    local_array[i]=19
+    i=i+1
+    local_array[i]=11
+    i=i+1
+    local_array[i]=2
+
+    i=0
+    sum:u8 = local_array[i]
+    i=i+1
+    sum = sum+local_array[i]
+    i=i+1
+    sum = sum+local_array[i]
+    i=i+1
+    sum = sum+local_array[i]
+    
+    return sum
+} 

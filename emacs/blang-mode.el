@@ -60,6 +60,6 @@
 (define-derived-mode blang-mode prog-mode "BLang"
   "Major mode for editing BLang source code."
   (setq font-lock-defaults '((blang-font-lock-keywords)))
-  (setq comment-start "//")
+  (setq comment-start "#")
   (setq comment-end "")
   (setq-local indent-line-function 'blang-indent-line))
