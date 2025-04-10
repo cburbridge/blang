@@ -15,6 +15,7 @@ from blang.compiler.types import (
     VariableType,
     SizeSpecifiers,
     SizeReserves,
+    TypeSizes,
     SizeDefiners,
     AddressPointer,
     RBP,
@@ -613,6 +614,37 @@ def compile_for_range(node: Node, context: Context):
     ]
 
     context.pop_frame()
+    return asm
+
+
+@node_compiler(NodeType.SQUELCH)
+def compile_squelch(node, context: Context):
+    target_type, var_node = node.children
+    target_type = TokenVariableTypeMap[target_type.token.typ]
+    var = context.variables.get(var_node.token.text)
+    if not var:
+        raise CompileError(f"Unknown variable {var_node.token.text}", node)
+    reg = context.free_registers.pop()
+    context.occupied_registers.append(reg)
+    reg.type = target_type
+    reg.indirection_count = var.indirection_count
+
+    target_size = TypeSizes[target_type]
+    source_size = var.size
+    if target_size > source_size:
+        # squelch up
+        reg.type = var.type
+    else:
+        # squelch down
+        reg.type = target_type
+
+    asm = [
+        f"xor {reg.full_reg}, {reg.full_reg}",  # zero it
+        f"mov {reg}, {var};  squelch",
+    ]
+    reg.type = target_type
+    print(f"Compiled squelch {asm}, type is {reg.type}")
+
     return asm
 
 

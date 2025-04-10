@@ -3,11 +3,11 @@
 # a comment with "a string"
 
 def main(): u64 {
-    total:u64=0
+    total:u32=0
     
     for 2..8:1 as i:u64 {
-        total = total + i
+        total = total + u32|i|;
     }
-    return total;
+    return u64|total|;
    
 } 

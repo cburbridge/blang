@@ -1,5 +1,5 @@
 # todo
-for loops
+/ for loops
 multiplication
 logicals
 if
@@ -11,8 +11,8 @@ negatives
 floats
 continue
 break
-for loops on non bytes - fix increments
-squelching
+/ for loops on non bytes - fix increments
+/ squelching
 
 # Grammar
 

@@ -1,0 +1,7 @@
+# expected_exit_code = 255
+
+def main(): u8 {
+    total:u16=65535
+    
+    return u8|total|;
+} 

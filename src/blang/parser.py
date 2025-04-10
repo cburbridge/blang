@@ -90,6 +90,7 @@ class NodeType(enum.StrEnum):
     FOR_ARRAY_LOOP = enum.auto()
     FOR_RANGE_LOOP = enum.auto()
     MODULE = enum.auto()
+    SQUELCH = enum.auto()
 
 
 def parser(type=NodeType.UNKNOWN):
@@ -186,6 +187,15 @@ def Array(node):
 
 
 Type = OneOf(Array, BaseType, RefType)  # order matters
+
+
+@parser(NodeType.SQUELCH)
+def Squelch(node):
+    node.eat_child(Type)
+    node.eat(TokenSpec.BAR)
+    node.eat_child(Identifier)
+    node.eat(TokenSpec.BAR)
+    return node
 
 
 @parser(NodeType.IDENTIFIER)
@@ -339,6 +349,7 @@ Factor = OneOf(
     IdentifierRef,
     CapturedExpression,
     DeRef,
+    Squelch,
 )
 
 

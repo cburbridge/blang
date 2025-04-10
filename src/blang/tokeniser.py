@@ -2,7 +2,7 @@ import enum
 from blang.exceptions import UnexpectedCharacterError
 from dataclasses import dataclass
 from typing import List
-from .matcher import Matcher, Repeat, CommentMatcher
+from .matcher import Matcher, Repeat, CommentMatcher, StringMatcher
 
 ALPHA_LOWER = "abcdefghijklmnopqrstuvwxyz"
 ALPHA_UPPER = ALPHA_LOWER.upper()
@@ -30,7 +30,7 @@ class Token:
 
 
 class TokenSpec(enum.Enum):
-    # STRING
+    STRING = StringMatcher()
     COMMENT = CommentMatcher("#")
     DEF = Matcher(*"def")
     RETURN = Matcher(*"return")
@@ -61,9 +61,9 @@ class TokenSpec(enum.Enum):
     ASTRISK = Matcher("*")
     COMMA = Matcher(",")
     DOTDOT = Matcher(*"..")
-    # REF = Matcher(*"&")
+    BAR = Matcher(*"|")
 
-    STRING = Matcher(QUOTE, Repeat(ANY), QUOTE)
+    # STRING = Matcher(QUOTE, Repeat(ANY), QUOTE)
     FLOAT = Matcher(Repeat(NUMERAL, min=0), PERIOD, Repeat(NUMERAL, min=1))
     INTEGER = Matcher(Repeat(NUMERAL, min=1))
     ASSIGN = Matcher("=")

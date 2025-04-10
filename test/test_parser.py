@@ -13,6 +13,7 @@ from blang.parser import (
     Identifier,
     ArrayItem,
     Range,
+    Squelch,
     print_tree,
 )
 
@@ -278,6 +279,16 @@ def test_range_no_step():
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
     t = Range(tokens)
+    assert t
+    assert t._eaten == len(tokens)
+    print_tree(t)
+
+
+def test_squelch():
+    s = "u8|fish|"
+    tokens = list(TokenSpec.tokenise(s))
+    print([t.typ.name for t in tokens])
+    t = Squelch(tokens)
     assert t
     assert t._eaten == len(tokens)
     print_tree(t)

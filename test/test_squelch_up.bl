@@ -1,0 +1,7 @@
+# expected_exit_code = 4
+
+def main(): u64 {
+    total: u8 = 4
+    
+    return u64|total|;
+} 
