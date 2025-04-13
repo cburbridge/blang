@@ -162,19 +162,18 @@ class StringMatcher:
 
     @property
     def eaten_count(self):
-        return len(self.content)
+        return len(self.content) + 2
 
     def feed(self, c):
         if self.is_failed:
             return Matcher.FeedResult.FAIL
         if self.in_string:
             if c == self.str_char:
-                return Matcher.FeedResult.DONE
+                return Matcher.FeedResult.DONE_NOT_EATEN
             self.content += c
             return Matcher.FeedResult.CONTINUE
         if c == self.str_char:
             self.in_string = True
-            self.content += c
             return Matcher.FeedResult.CONTINUE
         self.is_failed = True
         return Matcher.FeedResult.FAIL

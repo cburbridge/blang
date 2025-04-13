@@ -10,7 +10,7 @@
 
 (defconst blang-font-lock-keywords
   (let* (
-         (keywords '("if" "else" "while" "for" "return" "break" "continue"))
+         (keywords '("if" "else" "while" "for" "return" "break" "external" "export " "continue" "as" "def"))
          (types '("u8" "u16" "u32" "u64" "f64"))
          (constants '("true" "false" "null" "NULL"))
 

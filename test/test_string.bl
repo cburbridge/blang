@@ -1,0 +1,18 @@
+# expected_exit_code = 244
+# because total is 500, modulo 256
+
+a:u8[6] = "Hello"
+
+external def print_string(str : <u8>, len: u32) : u8;
+
+def main(): u8 {
+    total: u16 = 0
+    for a as i, c {
+	tmp:u8 = <c>
+	total = total + u16|tmp|
+    }
+    s: <u8>
+    s = >a<
+    print_string(>a<, 5)
+    return u8|total|
+} 

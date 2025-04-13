@@ -1,18 +1,20 @@
 # todo
-/ for loops
+fix squelching of derefs and liteals
+fix deref an array item >a[0]<
+strings
 multiplication
 logicals
 if
 while
-strings
 syscalls
 structs
 negatives
 floats
 continue
 break
-/ for loops on non bytes - fix increments
-/ squelching
+DONE for loops
+DONE for loops on non bytes - fix increments
+DONE squelching
 
 # Grammar
 

@@ -20,31 +20,18 @@ def cli(input_files, output_file, debug=False):
     print(f"inp: {input_files}")
     object_files = []
 
-    entry = [
-        "global _start",
-        "extern main",
-        "; --- ENTRY POINT ---",
-        "_start:",
-        "  call main",
-        "  mov edi, eax",
-        "  mov eax, 60",
-        "  syscall",
-    ]
-    with open("/tmp/entry.asm", "w") as tmp:
-        #    with tempfile.NamedTemporaryFile("w") as tmp:
-        tmp.write("\n".join(entry))
-        tmp.flush()
+    for asm in (Path(__file__).parent / "compiler").glob("*.asm"):
         cmd = [
             "nasm",
             "-f",
             "elf64",
-            tmp.name,
+            str(asm),
             "-o",
-            str(Path(tmp.name).with_suffix(".o")),
+            str(asm.with_suffix(".o")),
         ]
         click.echo(">  " + " ".join(cmd))
         subprocess.check_call(cmd)
-        object_files.append(Path(tmp.name).with_suffix(".o"))
+        object_files.append(str(asm.with_suffix(".o")))
 
     for file in input_files:
         with open(file, "r") as in_f:
@@ -52,7 +39,7 @@ def cli(input_files, output_file, debug=False):
         with tempfile.NamedTemporaryFile("w") as tmp:
             click.echo(f"Compiling {file}")
             try:
-                asm = compiler(src)
+                asm = compiler(src, debug)
             except CompileError as e:
                 click.echo(f"Compilation error:\n {str(e)}", err=True)
                 return

@@ -34,6 +34,8 @@ class TokenSpec(enum.Enum):
     COMMENT = CommentMatcher("#")
     DEF = Matcher(*"def")
     RETURN = Matcher(*"return")
+    EXTERN = Matcher(*"external")
+    EXPORT = Matcher(*"export")
     NEWLINE = Matcher("\n")
     IDENTIFIER = Matcher(
         ALPHA_LOWER + ALPHA_UPPER + UNDERSCORE,
@@ -146,7 +148,7 @@ class TokenSpec(enum.Enum):
                         lineno=line_number,
                         text=choice.value.content,
                     )
-                    ret = fed - len(token.text)
+                    ret = fed - choice.value.eaten_count
                     p -= ret
                     col_number -= ret
                 else:

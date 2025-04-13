@@ -85,6 +85,18 @@ def typed_identifier_to_variable(typed_identifier: Node):
 @node_compiler(parser.NodeType.MODULE)
 def compile_module(node, context: Context) -> str:
     asm = ""
+    # Collect all strings together to keep in .ro
+    """
+    nodes = [node]
+
+    while len(nodes) > 0:
+        n = nodes.pop(0)
+        for child in n.children:
+            nodes.append(child)
+        if n.type == NodeType.STRING:
+            context.strings[]=n
+       """
+
     # Collect declarations
     declarations = list(
         filter(lambda x: x.type == parser.NodeType.DECLARATION, node.children)
@@ -101,7 +113,10 @@ def compile_module(node, context: Context) -> str:
 
     # Collect funcs
     functions = list(
-        filter(lambda x: x.type == parser.NodeType.FUNC_DEF, node.children)
+        filter(
+            lambda x: x.type in (parser.NodeType.FUNC_DEF, parser.NodeType.FUNC_DECL),
+            node.children,
+        )
     )
     # pass 1 to get function declarations into globals
     for function in functions:
@@ -136,7 +151,11 @@ def compile_declaration(node, context: Context):
         init = node.children[1]
 
     if not context.use_stack:
-        if init and init.type not in (NodeType.FLOAT, NodeType.INTEGER):
+        if init and init.type not in (
+            NodeType.FLOAT,
+            NodeType.INTEGER,
+            NodeType.STRING,
+        ):
             raise CompileError("Can't initialise with non-constant.", init)
 
         if context.is_local_var(var.identifier):
@@ -148,8 +167,13 @@ def compile_declaration(node, context: Context):
         context.globals_[var.identifier] = var
 
         if init:
-            dd = SizeDefiners[var.size]
-            return [f"{var.identifier}: {dd} {init.token.text}"]
+            if init.type == NodeType.STRING:
+                if var.type != VariableType.u8:
+                    raise CompileError("Only asign strings to u8[] types.", node)
+                return [f'{var.identifier}: db "{init.token.text}",0']
+            else:
+                dd = SizeDefiners[var.size]
+                return [f"{var.identifier}: {dd} {init.token.text}"]
 
         res = SizeReserves[var.size]
         count = 1 if not isinstance(var, Array) else var.length
@@ -171,6 +195,12 @@ def compile_declaration(node, context: Context):
             initialise = (*asm, f"mov {sizespec} {var.location}, {reg}")
 
         return [f"; {var.identifier} @ {var.location}", *initialise]
+
+
+@node_compiler(NodeType.FUNC_DECL)
+def comile_func_decl(node, context: Context):
+    identifier = node.children[0]
+    return [f"extern {identifier.token.text}"]
 
 
 @node_compiler(NodeType.FUNC_DEF)
@@ -329,7 +359,7 @@ def compile_to_literal(
     return reg, asm
 
 
-def test_compile_to_lit():
+def notest_compile_to_lit():
     program = """(a + b - c + 5 + N - Q + a + b)+ (d + e+1)    """
     tokens = list(TokenSpec.tokenise(program))
     ex = Expr(tokens)
@@ -365,7 +395,7 @@ def compile_additive(node: Node, context: Context):
     r, code_r = compile_to_literal(node.children[1], context)
     if not isinstance(r, Literal) and r.size != reg.size:
         raise CompileError(
-            f"Size mismatch. {r.identifier} is {r.size} bytes, {l.identifier} is {l.size} bytes. May need to squelch.",
+            f"Size mismatch. {r} is {r.size} bytes, {l} is {l.size} bytes. May need to squelch.",
             node,
         )
     if r.type != reg.type or (r.indirection_count > 1 != reg.indirection_count > 1):
@@ -560,7 +590,7 @@ def compile_for(node: Node, context: Context):
 
     loop_body = compile(block, context)
     asm = [
-        f".{loop_id}_begin",
+        f".{loop_id}_begin:",
         f"mov qword {index.location}, 0        ; zero index",
         f"lea rax, {array.location}",
         f"  mov {element.location}, rax",
@@ -653,10 +683,11 @@ def compile_if(node, context: Context):
     return compile_block(node.children[1], context)
 
 
-def compiler(text):
+def compiler(text, debug=False):
     tokens = list(TokenSpec.tokenise(text))
-    # for p in tokens:
-    # print(p.typ, p.text)
+    if debug:
+        for p in tokens:
+            print(p.typ, p.text)
     module = Module(tokens)
 
     if not module:

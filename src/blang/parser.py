@@ -73,6 +73,7 @@ class NodeType(enum.StrEnum):
     FUNC_CALL = enum.auto()
     PARAMETER_LIST = enum.auto()
     FUNC_DEF = enum.auto()
+    FUNC_DECL = enum.auto()
     BLOCK = enum.auto()
     CAPTURED_EXPRESSION = enum.auto()
     DE_REF = enum.auto()
@@ -91,6 +92,7 @@ class NodeType(enum.StrEnum):
     FOR_RANGE_LOOP = enum.auto()
     MODULE = enum.auto()
     SQUELCH = enum.auto()
+    STRING = enum.auto()
 
 
 def parser(type=NodeType.UNKNOWN):
@@ -193,7 +195,7 @@ Type = OneOf(Array, BaseType, RefType)  # order matters
 def Squelch(node):
     node.eat_child(Type)
     node.eat(TokenSpec.BAR)
-    node.eat_child(Identifier)
+    node.eat_child(Factor)
     node.eat(TokenSpec.BAR)
     return node
 
@@ -216,8 +218,7 @@ def TypedIdentifier(node):
 def Declaration(node):
     node.eat_child(TypedIdentifier)
     if maybe(node.eat)(TokenSpec.ASSIGN):
-        node.eat_child(Expr)
-
+        node.eat_child(ExprOrString)
     maybe(node.eat)(TokenSpec.TERMINATOR)
     return node
 
@@ -246,7 +247,7 @@ LVal = OneOf(DeRef, ArrayItem, Identifier)  # order matters here
 def Assignment(node):
     node.eat_child(LVal)
     node.eat(TokenSpec.ASSIGN)
-    node.eat_child(Expr)
+    node.eat_child(ExprOrString)
     maybe(node.eat)(TokenSpec.TERMINATOR)
     return node
 
@@ -264,6 +265,12 @@ def Float(node):
 
 
 Number = OneOf(Integer, Float)
+
+
+@parser(NodeType.STRING)
+def String(node):
+    node.eat(TokenSpec.STRING, set_leaf=True)
+    return node
 
 
 @parser(NodeType.RETURN)
@@ -309,6 +316,18 @@ def FuncDef(node):
     node.eat(TokenSpec.COLON)
     node.eat_child(Type)
     node.eat_child(Block)
+    return node
+
+
+@parser(NodeType.FUNC_DECL)
+def FuncDecl(node):
+    node.eat(TokenSpec.EXTERN)
+    node.eat(TokenSpec.DEF)
+    node.eat_child(Identifier)
+    node.eat_child(ParameterList)
+    if maybe(node.eat)(TokenSpec.COLON):
+        node.eat_child(Type)
+    maybe(node.eat)(TokenSpec.TERMINATOR)
     return node
 
 
@@ -490,6 +509,9 @@ def Range(node):
 ForLoop = OneOf(ForArrayLoop, ForRangeLoop)
 
 Expr = LogicOr  # Additive
+
+ExprOrString = OneOf(Expr, String)
+
 Statement = OneOf(
     FuncCall,
     # FuncDef,
@@ -503,7 +525,7 @@ Statement = OneOf(
     Block,
 )
 
-DecOrDef = OneOf(FuncDef, Declaration)
+DecOrDef = OneOf(FuncDef, FuncDecl, Declaration)
 
 
 @parser(NodeType.MODULE)

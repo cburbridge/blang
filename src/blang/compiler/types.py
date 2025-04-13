@@ -209,6 +209,8 @@ class Context:
     )
     occupied_registers: list[Register] = field(default_factory=lambda: [])
 
+    strings = {}
+
     @property
     def globals_(self):
         return self.variable_stack.maps[-1]

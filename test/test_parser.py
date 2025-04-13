@@ -8,6 +8,7 @@ from blang.parser import (
     ParameterList,
     FuncDef,
     TypedIdentifier,
+    String,
     Return,
     Declaration,
     Identifier,
@@ -289,6 +290,16 @@ def test_squelch():
     tokens = list(TokenSpec.tokenise(s))
     print([t.typ.name for t in tokens])
     t = Squelch(tokens)
+    assert t
+    assert t._eaten == len(tokens)
+    print_tree(t)
+
+
+def test_str():
+    s = '"FISH"'
+    tokens = list(TokenSpec.tokenise(s))
+    print([t.typ.name for t in tokens])
+    t = String(tokens)
     assert t
     assert t._eaten == len(tokens)
     print_tree(t)
