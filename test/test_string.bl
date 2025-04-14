@@ -6,6 +6,9 @@ a:u8[6] = "Hello"
 external def print_string(str : <u8>, len: u32) : u8;
 
 def main(): u8 {
+    local_string:u8[19] =" World from Blang."
+    local_string[17] = '!'
+    local_string[18] = 10
     total: u16 = 0
     for a as i, c {
 	tmp:u8 = <c>
@@ -14,5 +17,6 @@ def main(): u8 {
     s: <u8>
     s = >a<
     print_string(>a<, 5)
+    print_string(>local_string<,19)
     return u8|total|
 } 

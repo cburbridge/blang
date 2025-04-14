@@ -82,26 +82,33 @@ def typed_identifier_to_variable(typed_identifier: Node):
     return Variable(identifier=identifier.token.text, type=type, indirection_count=refs)
 
 
+# @node_compiler(parser.NodeType.STRING)
+# def compile_string(node, context: Context):
+# need to copy the string from rodata into this
+
+# return []
+
+
 @node_compiler(parser.NodeType.MODULE)
 def compile_module(node, context: Context) -> str:
-    asm = ""
+    asm = []
     # Collect all strings together to keep in .ro
-    """
     nodes = [node]
-
+    asm.append("section .rodata")
+    context.string_literals = {}
     while len(nodes) > 0:
         n = nodes.pop(0)
         for child in n.children:
             nodes.append(child)
         if n.type == NodeType.STRING:
-            context.strings[]=n
-       """
+            s_id = f"s{len(context.string_literals) + 1}"
+            context.string_literals[n.token.text] = s_id
+            asm.append(f'{s_id}: db "{n.token.text}", 0')
 
     # Collect declarations
     declarations = list(
         filter(lambda x: x.type == parser.NodeType.DECLARATION, node.children)
     )
-    asm = []
     asm.append("section .data")
     for declaration in filter(lambda d: len(d.children) > 1, declarations):
         asm.extend(compile(declaration, context))
@@ -190,21 +197,46 @@ def compile_declaration(node, context: Context):
         context.variables[var.identifier] = var
         initialise = ()
         if init:
-            sizespec = SizeSpecifiers[var.size]
-            reg, asm = compile_to_literal(init, context)
-            initialise = (*asm, f"mov {sizespec} {var.location}, {reg}")
+            if init.type == NodeType.STRING:
+                if var.type != VariableType.u8 and not isinstance(var, Array):
+                    raise CompileError("Only asign strings to u8[] types.", node)
+                src_str = init.token.text
+                src_id = context.string_literals.get(src_str)
+                if False:  # src_id:
+                    print(context.string_literals)
+                    raise CompileError(
+                        f'Compiler bug. Missing string literal "{src_str}" in ro data.',
+                        node,
+                    )
+                str_len = len(src_str)
+                if str_len > var.length:
+                    raise CompileError(
+                        f"'{src_str} doesnt fit into {var.identifier}. Needs {str_len} bytes.",
+                        node,
+                    )
+                initialise = [
+                    "cld",
+                    f"mov rsi, {src_id}         ; source address",
+                    f"lea rdi, {var.location}   ; destination address",
+                    f"mov rcx, {str_len}                 ; number of bytes to copy",
+                    "rep movsb",
+                ]
+            else:
+                sizespec = SizeSpecifiers[var.size]
+                reg, asm = compile_to_literal(init, context)
+                initialise = [*asm, f"mov {sizespec} {var.location}, {reg}"]
 
         return [f"; {var.identifier} @ {var.location}", *initialise]
 
 
 @node_compiler(NodeType.FUNC_DECL)
-def comile_func_decl(node, context: Context):
+def compile_func_decl(node, context: Context):
     identifier = node.children[0]
     return [f"extern {identifier.token.text}"]
 
 
 @node_compiler(NodeType.FUNC_DEF)
-def comile_func(node, context: Context):
+def compile_func(node, context: Context):
     # we already created the Function object in the globals as part of the module
     # so we can reuse it
     identifier, parameters, type, block = node.children
@@ -348,6 +380,8 @@ def compile_to_literal(
         return context.variables[node.token.text], []
     if node.typ in (NodeType.INTEGER):  # todo literal sizes and types
         return Literal(node.token.text, type=VariableType.u32), []
+    if node.typ in (NodeType.CHARACTER):
+        return Literal(str(ord(node.token.text)), type=VariableType.u8), []
 
     asm = compile(node, context)
     try:
@@ -419,6 +453,79 @@ def compile_additive(node: Node, context: Context):
         *((f"mov {reg}, {l}",) if l != reg else ()),
         *(f"{op} {reg}, {r}" for _ in range(ref_muliplier)),
     ]
+
+
+@node_compiler(NodeType.TERM)
+def compile_term(node: Node, context: Context):
+    l, code_l = compile_to_literal(node.children[0], context)
+
+    if l in context.occupied_registers:  # its a register so use i
+        reg = l
+    else:
+        reg = context.free_registers.pop()
+        reg.set_in_use(l.size)
+        reg.indirection_count = l.indirection_count
+        reg.type = l.type
+        context.occupied_registers.append(reg)
+
+    r, code_r = compile_to_literal(node.children[1], context)
+    if not isinstance(r, Literal) and r.size != reg.size:
+        raise CompileError(
+            f"Size mismatch. {r} is {r.size} bytes, {l} is {l.size} bytes. May need to squelch.",
+            node,
+        )
+    if r.type != reg.type or (r.indirection_count > 1 != reg.indirection_count > 1):
+        print(
+            "WARNING: Type mismatch in addition. Sizes match so proceeding. May be bad."
+        )
+
+    if r in context.occupied_registers:
+        context.occupied_registers.remove(r)
+        context.free_registers.append(r)
+
+    if False:  # eiterh is indirection
+        raise CompileError("Can't multiply or divide with a pointer.", node)
+
+    asm = [
+        *code_l,
+        *code_r,
+    ]
+
+    # if r is not a reg, make it so beause mul needs registers
+    if isinstance(r, Literal):
+        rcx = Register("rcx")
+        rcx.type = r.type
+        asm.append(f"mov {rcx}, {r}")
+        r = rcx
+
+    rax = Register("rax")
+    rax.type = l.type
+    rdx = Register("rdx")
+    rdx.type = l.type
+    match node.token:
+        case TokenSpec.ASTRISK:
+            return [
+                *asm,  #
+                f"mov {rax}, {l}",
+                f"mul {r.sizespec} {r}",
+                f"mov {reg}, {rax}",
+            ]
+        case TokenSpec.DIVIDE:
+            return [
+                *asm,  #
+                f"mov {rax}, {l}",
+                "xor rdx, rdx",
+                f"div {r.sizespec} {r}",
+                f"mov {reg}, {rax}",
+            ]
+        case TokenSpec.MODULO:
+            return [
+                *asm,  #
+                f"mov {rax}, {l}",
+                "xor rdx, rdx",
+                f"div {r.sizespec} {r}",
+                f"mov {reg}, {rdx}",
+            ]
 
 
 @node_compiler(NodeType.ASSIGNMENT)
@@ -610,6 +717,21 @@ def compile_for(node: Node, context: Context):
     return asm
 
 
+@node_compiler(NodeType.BOOLEAN)
+def compile_for_bool(node: Node, context: Context):
+    asm = []
+    reg = context.free_registers.pop()
+    reg.type = VariableType.u8
+    reg.indirection_count = 0
+
+    context.occupied_registers.append(reg)
+    if node.token.typ == TokenSpec.TRUE:
+        asm = [f"mov {reg}, 1"]
+    else:
+        asm = [f"mov {reg}, 0"]
+    return asm
+
+
 @node_compiler(NodeType.FOR_RANGE_LOOP)
 def compile_for_range(node: Node, context: Context):
     range_node, identifier_node, block = node.children
@@ -630,7 +752,7 @@ def compile_for_range(node: Node, context: Context):
     reg_for_comparer = Register("rax")
     reg_for_comparer.type = var.type
     asm = [
-        f".{loop_id}_begin",
+        f".{loop_id}_begin:",
         f"mov {var.sizespec} {var.location}, {start}        ; range start",
         f".{loop_id}_start:",
         f"  mov {reg_for_comparer}, {var.location}",
@@ -644,6 +766,47 @@ def compile_for_range(node: Node, context: Context):
     ]
 
     context.pop_frame()
+    return asm
+
+
+@node_compiler(NodeType.RELATIONAL)
+def compile_relational(node, context: Context):
+    left, right = node.children
+    left, left_asm = compile_to_literal(left, context)
+    right, right_asm = compile_to_literal(right, context)
+
+    condition = node.token.typ
+    match condition:
+        case TokenSpec.LESS_THAN:
+            op = "setb"
+        case TokenSpec.MORE_THAN:
+            op = "seta"
+        case TokenSpec.LESS_THAN_EQ:
+            op = "setbe"
+        case TokenSpec.MORE_THAN_EQ:
+            op = "setae"
+        case TokenSpec.EQUAL:
+            op = "sete"
+        case TokenSpec.NOT_EQ:
+            op = "setne"
+
+    result = context.free_registers.pop()
+    result.type = VariableType.u8
+    result.indirection_count = 0
+    context.occupied_registers.append(result)
+    rax = Register("rax")
+    rax.type = left.type
+
+    asm = [
+        *left_asm,
+        *right_asm,
+        f"mov {rax}, {left}",
+        f"cmp {rax}, {right}",  #
+        f"{op} al",
+        f"mov {result}, al",
+    ]
+    context.mark_free_if_reg(left)
+    context.mark_free_if_reg(right)
     return asm
 
 
@@ -680,7 +843,31 @@ def compile_squelch(node, context: Context):
 
 @node_compiler(NodeType.IF_STATEMENT)
 def compile_if(node, context: Context):
-    return compile_block(node.children[1], context)
+    condition = node.children[0]
+    condition, eval_expr = compile_to_literal(condition, context)
+    pos_label = f".pos_{id(node)}"
+    end_label = f".end_if_{id(node)}"
+    comparison = [
+        f"cmp byte {condition}, 0",
+        f"jnz {pos_label}",
+    ]
+
+    negative_block = (
+        compile_block(node.children[2], context) if len(node.children) > 2 else []
+    )
+    positive_block = compile_block(node.children[1], context)
+
+    context.mark_free_if_reg(condition)
+
+    return [
+        *eval_expr,
+        *comparison,
+        *negative_block,
+        f"jmp {end_label}",
+        f"{pos_label}:",
+        *positive_block,
+        f"{end_label}:",
+    ]
 
 
 def compiler(text, debug=False):

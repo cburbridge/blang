@@ -182,3 +182,40 @@ class StringMatcher:
         self.content = ""
         self.in_string = False
         self.is_failed = False
+
+
+class CharacterMatcher:
+    """Specialist matcher for catching strings."""
+
+    def __init__(self, str_char="'"):
+        self.str_char = str_char
+        self.reset()
+
+    @property
+    def active(self):
+        return len(self.active_exp) > 0 and self.eaten_count > 0
+
+    @property
+    def eaten_count(self):
+        return len(self.content) + 2
+
+    def feed(self, c):
+        if self.is_failed:
+            return Matcher.FeedResult.FAIL
+        if self.in_string:
+            if c == self.str_char:
+                if len(self.content) != 1:
+                    return Matcher.FeedResult.FAIL
+                return Matcher.FeedResult.DONE_NOT_EATEN
+            self.content += c
+            return Matcher.FeedResult.CONTINUE
+        if c == self.str_char:
+            self.in_string = True
+            return Matcher.FeedResult.CONTINUE
+        self.is_failed = True
+        return Matcher.FeedResult.FAIL
+
+    def reset(self):
+        self.content = ""
+        self.in_string = False
+        self.is_failed = False

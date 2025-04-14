@@ -1,0 +1,19 @@
+# expected_exit_code = 2
+# 2 * 4 * 6
+
+external def print_string(str : <u8>, len: u32) : u8;
+
+def main(): u8 {
+    total: u16 = 1
+    for 2..20 : 2 as a:u8 {
+	if (a <= 7) {
+	    total = total * u16|a|
+	}
+    }
+
+    # return u8|total|
+    # a: u8 = 99
+    # b:u8 = 32
+    # return 99 % u32|b|
+    return 12 % 8
+} 

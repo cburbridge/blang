@@ -31,6 +31,7 @@
       (">\\([a-zA-Z_][a-zA-Z0-9_]*\\)<" 1 font-lock-variable-name-face)
       ;; String literals
       ("\"[^\"]*\"" . font-lock-string-face)
+      ("#.*$" . font-lock-comment-face)
       )))
 (defun blang-indent-line ()
   "Indent current line for BLang."

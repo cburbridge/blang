@@ -93,6 +93,7 @@ class NodeType(enum.StrEnum):
     MODULE = enum.auto()
     SQUELCH = enum.auto()
     STRING = enum.auto()
+    CHARACTER = enum.auto()
 
 
 def parser(type=NodeType.UNKNOWN):
@@ -176,6 +177,12 @@ def IdentifierRef(node):
     node.eat(TokenSpec.MORE_THAN)
     node.eat_child(Identifier)
     node.eat(TokenSpec.LESS_THAN)
+    return node
+
+
+@parser(NodeType.CHARACTER)
+def Character(node):
+    node.eat(TokenSpec.CHARACTER, set_leaf=True)
     return node
 
 
@@ -362,6 +369,7 @@ def Boolean(node):
 Factor = OneOf(
     FuncCall,
     Number,
+    Character,
     Boolean,
     ArrayItem,  # oh no, order matters :-(
     Identifier,
@@ -402,8 +410,10 @@ def _Term(node):
 @parser(NodeType.TERM)
 def Term(node):
     node.eat_child(Factor)
-    while maybe(node.eat)(TokenSpec.ASTRISK, set_leaf=True) or maybe(node.eat)(
-        TokenSpec.DIVIDE, set_leaf=True
+    while (
+        maybe(node.eat)(TokenSpec.ASTRISK, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.DIVIDE, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.MODULO, set_leaf=True)
     ):
         node.eat_child(Factor)
         left = copy.deepcopy(node)

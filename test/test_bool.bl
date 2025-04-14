@@ -1,0 +1,18 @@
+# expected_exit_code = 1
+
+external def print_string(str : <u8>, len: u32) : u8;
+
+def main(): u8 {
+    local_string:u8[24] ="Hello World from Blang."
+    local_string[23]=10; # \n
+
+    test:u8 = true
+    a: u32 = 2020
+
+    if(a-1 != 199) {
+	print_string(>local_string<,24)
+	return 1
+    }
+    
+    return 0;
+} 

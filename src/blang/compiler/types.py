@@ -65,7 +65,12 @@ RegistersPartial = {
     for r in ("r10", "r11", "r12", "r13", "r14", "r15")
 }
 RegistersPartial.update(
-    {"rax": {8: "rax", 4: "eax", 2: "ax", 1: "al"}, "rbp": {8: "rbp"}}
+    {
+        "rax": {8: "rax", 4: "eax", 2: "ax", 1: "al"},
+        "rbp": {8: "rbp"},
+        "rcx": {8: "rcx", 4: "ecx", 2: "cx", 1: "cl"},
+        "rdx": {8: "rdx", 4: "edx", 2: "dx", 1: "dl"},
+    }
 )
 
 
@@ -194,6 +199,7 @@ class Function(Variable):
 @dataclass
 class Context:
     variable_stack: ChainMap = field(default_factory=ChainMap)
+    string_literals: dict[str, Node] = field(default_factory=dict)
     locals_stack_size: int = 0
     use_stack: bool = False
     current_func: Function = None

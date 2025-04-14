@@ -1,17 +1,21 @@
 # todo
 fix squelching of derefs and liteals
 fix deref an array item >a[0]<
-strings
-multiplication
-logicals
-if
+fix if(1) and if(0) - literal not i reg
+string escapes
 while
-syscalls
-structs
-negatives
-floats
 continue
 break
+negatives
+floats
+structs
+better parse errors
+DONE multiplication
+DONE logicals
+DONE if
+DONE characters
+DONE strings
+DONE syscalls
 DONE for loops
 DONE for loops on non bytes - fix increments
 DONE squelching
