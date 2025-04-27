@@ -1,0 +1,8 @@
+# expected_exit_code = 4
+
+def main(): u64 {
+    val:u8 = 4
+    val_ref:<u8> = >val<
+
+    return u64|<val_ref>|;
+} 

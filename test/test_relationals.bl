@@ -7,9 +7,9 @@ def main(): u8 {
 
     total: u16 = 0
     for 2..20 as a:u8 {
-	if (a <= 7) {
-	    total = total + u16|a|
-	}
+	  if (a <= 7) {
+	     total = total + u16|a|
+	  }
     }
 
     return u8|total|

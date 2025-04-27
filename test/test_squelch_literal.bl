@@ -1,0 +1,5 @@
+# expected_exit_code = 4
+
+def main(): u64 {
+    return u64|4|;
+} 

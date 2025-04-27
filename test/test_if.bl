@@ -1,0 +1,13 @@
+# expected_exit_code = 0
+
+def main(): u8 {
+
+    False: u8 = false
+    True: u8 = true
+
+    if 0:
+      return 1
+
+
+    return 0
+} 

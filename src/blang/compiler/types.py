@@ -1,7 +1,8 @@
-from collections import defaultdict, ChainMap
+from collections import ChainMap
 from dataclasses import dataclass, field
 import enum
 from blang.parser import TokenSpec, Node
+from pathlib import Path
 
 
 class VariableType(enum.StrEnum):
@@ -15,8 +16,15 @@ class VariableType(enum.StrEnum):
     i32 = enum.auto()
     i64 = enum.auto()
 
-    flt = enum.auto()
+    f64 = enum.auto()
 
+
+SignedIntVariableTypes = [
+    VariableType.i8,
+    VariableType.i16,
+    VariableType.i32,
+    VariableType.i64,
+]
 
 TokenVariableTypeMap = {
     TokenSpec.U8: VariableType.u8,
@@ -27,7 +35,7 @@ TokenVariableTypeMap = {
     TokenSpec.I16: VariableType.i16,
     TokenSpec.I32: VariableType.i32,
     TokenSpec.I64: VariableType.i64,
-    TokenSpec.FLOAT: VariableType.flt,
+    TokenSpec.F64: VariableType.f64,
 }
 
 TypeSizes = {
@@ -39,7 +47,7 @@ TypeSizes = {
     VariableType.i16: 2,
     VariableType.i32: 4,
     VariableType.i64: 8,
-    VariableType.flt: 8,
+    VariableType.f64: 8,
 }
 
 SizeReserves = {1: "resb", 2: "resw", 4: "resd", 8: "resq", 16: "resdq"}
@@ -60,9 +68,9 @@ ArgumentRegistersBySize = {
 }
 
 # GP Registers split by size
+GPRegisters = ("r10", "r11", "r12", "r13", "r14", "r15")
 RegistersPartial = {
-    r: {1: f"{r}b", 2: f"{r}w", 4: f"{r}d", 8: f"{r}"}
-    for r in ("r10", "r11", "r12", "r13", "r14", "r15")
+    r: {1: f"{r}b", 2: f"{r}w", 4: f"{r}d", 8: f"{r}"} for r in GPRegisters
 }
 RegistersPartial.update(
     {
@@ -196,10 +204,21 @@ class Function(Variable):
     parameters: list[Variable] = field(default_factory=list)
 
 
+class Context: ...
+
+
+@dataclass
+class FloatRegister:
+    name: str
+    context: Context
+    size: int = 8
+
+
 @dataclass
 class Context:
     variable_stack: ChainMap = field(default_factory=ChainMap)
-    string_literals: dict[str, Node] = field(default_factory=dict)
+    string_literals: dict[str, str] = field(default_factory=dict)
+    float_literals: dict[str, Variable] = field(default_factory=dict)
     locals_stack_size: int = 0
     use_stack: bool = False
     current_func: Function = None
@@ -215,7 +234,15 @@ class Context:
     )
     occupied_registers: list[Register] = field(default_factory=lambda: [])
 
-    strings = {}
+    free_float_registers: list[str] = field(
+        default_factory=lambda: [f"xmm{i}" for i in range(15)]
+    )
+    occupied_float_registers: list[str] = field(default_factory=lambda: [])
+
+    break_out_point: list[str] = field(default_factory=lambda: [])
+    continue_point: list[str] = field(default_factory=lambda: [])
+    strings: dict = field(default_factory=dict)
+    filename: Path | None = None
 
     @property
     def globals_(self):
@@ -234,10 +261,25 @@ class Context:
     def new_frame(self):
         self.variable_stack = self.variable_stack.new_child()
 
+    def take_a_register(self):
+        reg = self.free_registers.pop()
+        self.occupied_registers.append(reg)
+        return reg
+
     def mark_free_if_reg(self, maybe_reg):
-        if maybe_reg in self.occupied_registers:
-            self.occupied_registers.remove(maybe_reg)
-            self.free_registers.append(maybe_reg)
+        if isinstance(maybe_reg, Register):
+            if maybe_reg in self.occupied_registers:
+                self.occupied_registers.remove(maybe_reg)
+            if maybe_reg.full_reg in GPRegisters:
+                self.free_registers.append(maybe_reg)
+
+    def take_a_float_register(self):
+        reg = self.free_float_registers.pop()
+        self.occupied_float_registers.append(reg)
+
+    def free_a_float_register(self, reg):
+        self.occupied_float_registers.remove(reg)
+        self.free_float_registers.append(reg)
 
 
 def test_var_stack():

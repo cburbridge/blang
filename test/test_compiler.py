@@ -5,44 +5,7 @@ import subprocess
 from pathlib import Path
 import pytest
 
-
-def test_compile_dev():
-    program = """
-    glob: u8
-    g: u8[4]
-# a cool program
-def add(p:u64, q:u64) : u64 {
-    return p + q
-}
-    
-def main(): u64 {
-    glob=9
-    v: u64 = 5
-    q: u64 = 7
-    s: u8[32];
-    # <s + 5> = 9;
-    ss: u8;f
-    s[27] = 2
-    ss = s[27]
-    s[0]=99;
-    t: u64 = add(v,q);  # finally, comments ahoy
-    
-    return s[0]+s[27]
-} 
-    """
-
-    binary = None
-    with tempfile.NamedTemporaryFile("w") as f:
-        f.write(program)
-        f.flush()
-        binary = f.name + ".bin"
-        cli([f.name], binary, debug=True)
-
-    result = subprocess.call([binary])
-    assert result == 101
-
-    os.remove(binary)
-
+from blang.compiler.compiler import CompileError
 
 TEST_PROGRAM_FILES = list(Path(__file__).parent.glob("test_*.bl"))
 TEST_PROGRAM_NAMES = list(
@@ -55,16 +18,25 @@ def test_programs(test_program):
     print(f"Testing: {test_program.name}")
     with open(test_program, "r") as f:
         code = f.read()
+        code_lines =  code.splitlines()
         # Do something with the content
         expected_exit = int(
-            code.splitlines()[0].split("expected_exit_code")[1].split("=")[1]
+            code_lines[0].split("expected_exit_code")[1].split("=")[1]
         )
+        ld_flags=[]
+        i=1
+        while "***ld_flag***" in code_lines[i]:
+            ld_flags.append(code_lines[i].split("***ld_flag***")[1])
+            i+=1
         print(f"Expecting exit code {expected_exit}")
 
         with tempfile.NamedTemporaryFile("w") as f:
             binary = f.name + ".bin"
-            cli([test_program.absolute()], binary, debug=True)
-
+            try:
+                if cli(test_program.absolute(), binary," ".join(ld_flags), debug=True):
+                    assert False, "compile failed"
+            except Exception:
+                raise
             result = subprocess.call([binary])
             os.remove(binary)
 

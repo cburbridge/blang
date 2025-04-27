@@ -1,0 +1,31 @@
+# expected_exit_code = 0
+external def print_string(str : <u8>, len: u32) : u8;
+
+round:u8[12] = "Round we go."
+hello:u8[12] = "WHILE WE GO."
+
+def main(): u32 {
+    neg:i32 = -1;
+    another:i32 = neg-10
+
+
+    if another != -11 {
+      return 1;
+    }
+    again:u8 = u8|another|
+
+    if again != -11 {
+      return 1;
+    }
+
+    factor:u32 = 2
+    another = another * i32|factor|
+
+    if another != -22:
+      test: u32 = 99
+      return 1
+
+
+    return 0;
+
+}

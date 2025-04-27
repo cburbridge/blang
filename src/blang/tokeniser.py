@@ -35,7 +35,7 @@ class TokenSpec(enum.Enum):
     DEF = Matcher(*"def")
     RETURN = Matcher(*"return")
     EXTERN = Matcher(*"external")
-    EXPORT = Matcher(*"export")
+    # EXPORT = Matcher(*"export")
     NEWLINE = Matcher("\n")
     IDENTIFIER = Matcher(
         ALPHA_LOWER + ALPHA_UPPER + UNDERSCORE,
@@ -64,6 +64,8 @@ class TokenSpec(enum.Enum):
     ASTRISK = Matcher("*")
     COMMA = Matcher(",")
     DOTDOT = Matcher(*"..")
+    DOT = Matcher(".")
+
     BAR = Matcher(*"|")
     CHARACTER = CharacterMatcher()
 
@@ -74,6 +76,7 @@ class TokenSpec(enum.Enum):
 
     AND = Matcher(*"and")
     OR = Matcher(*"or")
+    NOT = Matcher(*"not")
     TRUE = Matcher(*"true")
     FALSE = Matcher(*"false")
 
@@ -82,8 +85,11 @@ class TokenSpec(enum.Enum):
 
     WHILE = Matcher(*"while")
     BREAK = Matcher(*"break")
+    CONTINUE = Matcher(*"continue")
     FOR = Matcher(*"for")
     AS = Matcher(*"as")
+
+    IMPORT = Matcher(*"import")
     ####
     ## Types
     ##
@@ -166,13 +172,14 @@ class TokenSpec(enum.Enum):
                 # Reset matchers and status
                 for matcher in cls.all_matchers():
                     matcher.reset()
+
                 active = set({t for t in cls})
                 succeeded = []
                 fed = 0
 
                 if token.typ not in (
-                    TokenSpec.WHITESPACE,
-                    TokenSpec.NEWLINE,
+                    # TokenSpec.WHITESPACE,
+                    # TokenSpec.NEWLINE,
                     TokenSpec.COMMENT,
                 ):
                     yield token

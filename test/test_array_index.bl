@@ -13,7 +13,7 @@ def main(): u32 {
     i=i+1
     local_array[i]=2
 
-    i=0
+    i = u16|0+0|
     sum:u8 = local_array[i]
     i=i+1
     sum = sum+local_array[i]

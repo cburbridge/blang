@@ -1,0 +1,19 @@
+# expected_exit_code = 0
+
+def main(): u8 {
+    if i32|-1| > i32|0| { return 1}
+
+
+    if i32|-10| > i32|5| { return 2}
+
+    if i32|-10| >= i32|-5| { return 3}
+
+
+    if u32|-1| < u32|0| { return 1}
+
+
+    if u32|-10| < u32|5| { return 2}
+
+    if u32|-10| >= u32|-5| { return 3}
+    return 0
+} 

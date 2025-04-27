@@ -1,0 +1,14 @@
+# expected_exit_code = 99
+
+# deref a small u8 should not end up with higher bits
+# still set
+
+
+def main(): u64 {
+    value:u8 = 99
+    valref :<u8> = >value<
+    if <valref> != 99 {
+        return 1
+    }
+    return <valref>
+} 

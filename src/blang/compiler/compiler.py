@@ -1,8 +1,10 @@
-from blang.parser import Module, print_tree, NodeType, Node, Expr
+from pathlib import Path
+
+from blang.parser import Module, print_tree, NodeType, Node
 from blang import parser
 from blang.tokeniser import TokenSpec
+import os
 
-# from blang.compiler.types import *
 from blang.compiler.types import (
     Literal,
     Register,
@@ -19,6 +21,7 @@ from blang.compiler.types import (
     SizeDefiners,
     AddressPointer,
     RBP,
+    SignedIntVariableTypes,
 )
 
 
@@ -34,7 +37,7 @@ class CompileError(Exception):
 _node_compilers = {}
 
 
-def node_compiler(type=NodeType.UNKNOWN):
+def node_compiler(type: NodeType):
     def node_compiler(method):
         def _wrap(*args, **kwargs):
             return method(*args, **kwargs)
@@ -47,11 +50,15 @@ def node_compiler(type=NodeType.UNKNOWN):
 
 def compile(node, context):
     try:
-        asm = _node_compilers[node.type](node, context)
+        asm, registers = _node_compilers[node.type](node, context)
+
+        if asm:
+            spacing = max(30 - len(asm[0]), 0)
+            asm[0] += spacing * " " + f"; L{node._tokens[0].lineno}: " + node.blang
     except AttributeError as e:
         print_tree(node)
         raise CompileError(f"Bad times. {e}", node)
-    return asm
+    return asm, registers
 
 
 def type_to_base_type_and_indirection_count(type) -> (VariableType, int):
@@ -82,51 +89,17 @@ def typed_identifier_to_variable(typed_identifier: Node):
     return Variable(identifier=identifier.token.text, type=type, indirection_count=refs)
 
 
-# @node_compiler(parser.NodeType.STRING)
-# def compile_string(node, context: Context):
-# need to copy the string from rodata into this
-
-# return []
-
-
-@node_compiler(parser.NodeType.MODULE)
-def compile_module(node, context: Context) -> str:
-    asm = []
-    # Collect all strings together to keep in .ro
-    nodes = [node]
-    asm.append("section .rodata")
-    context.string_literals = {}
-    while len(nodes) > 0:
-        n = nodes.pop(0)
-        for child in n.children:
-            nodes.append(child)
-        if n.type == NodeType.STRING:
-            s_id = f"s{len(context.string_literals) + 1}"
-            context.string_literals[n.token.text] = s_id
-            asm.append(f'{s_id}: db "{n.token.text}", 0')
-
-    # Collect declarations
-    declarations = list(
-        filter(lambda x: x.type == parser.NodeType.DECLARATION, node.children)
-    )
-    asm.append("section .data")
-    for declaration in filter(lambda d: len(d.children) > 1, declarations):
-        asm.extend(compile(declaration, context))
-    asm.append("")
-    asm.append("section .bss")
-    for declaration in filter(lambda d: len(d.children) < 2, declarations):
-        asm.extend(compile(declaration, context))
-    asm.append(" ")
-
-    # Collect funcs
-    functions = list(
+def collect_functions_from_module(module: Node, context: Context):
+    """Extracts function declarations from a module and adds Function objects
+    for them to the context.variables. Returns list of added functions."""
+    functions = []
+    # pass 1 to get function declarations into globals
+    for function in list(
         filter(
             lambda x: x.type in (parser.NodeType.FUNC_DEF, parser.NodeType.FUNC_DECL),
-            node.children,
+            module.children,
         )
-    )
-    # pass 1 to get function declarations into globals
-    for function in functions:
+    ):
         identifier, parameters, type = function.children[:3]
         type, refs = type_to_base_type_and_indirection_count(type)
         f = Function(
@@ -138,30 +111,199 @@ def compile_module(node, context: Context) -> str:
                 for t in parameters.children
                 if t.children
             ],
+            node=function,
         )
         if f.identifier in context.variables:
             raise CompileError(f"Duplicate declaration of '{f.identifier}'", identifier)
         context.globals_[f.identifier] = f
+        functions.append(f)
+    return functions
 
-    # pass 2 to compile definitions
+
+def import_node_to_filepath(node, imported_from: Path):
+    if node.children[0].type == TokenSpec.DOT:
+        filename = imported_from.parent / os.path.join(
+            *(n.token.text for n in node.children)
+        )
+    else:
+        filename = Path("/") / os.path.join(*(n.token.text for n in node.children))
+    return filename.with_suffix(".bl")
+
+
+@node_compiler(parser.NodeType.IMPORT)
+def compile_import(node, context: Context) -> str:
+    asm = []
+    filename = import_node_to_filepath(node, context.filename)
+    print(filename)
+    # open the file, read it, parse it,
+    module = parse_file(filename)
+
+    # extract exported declarations, produce a global directive for them and
+    # put them into context
+
+    # Collect declarations
+    declarations = list(
+        filter(lambda x: x.type == parser.NodeType.DECLARATION, module.children)
+    )
+    for dec in declarations:
+        extern = dec.children[0].token and dec.children[0].token.typ == TokenSpec.EXTERN
+        var = typed_identifier_to_variable(
+            dec.children[0] if not extern else dec.children[1]
+        )
+        var.location = AddressPointer(var.identifier)
+        context.globals_[var.identifier] = var
+        asm.append(f"extern {var.identifier}")
+
+    # Collect functions
+    functions = collect_functions_from_module(module, context)
+    for function in functions:
+        asm.append(f"extern {function.identifier} ")
+
+    return asm, []
+
+
+def collect_children_of_type(parent, type: NodeType):
+    nodes = [parent]
+    collection = []
+    while len(nodes) > 0:
+        n = nodes.pop(0)
+        for child in n.children:
+            nodes.append(child)
+        if n.type == type:
+            collection.append(n)
+    return collection
+
+
+@node_compiler(parser.NodeType.MODULE)
+def compile_module(node, context: Context) -> list[str]:
+    asm = []
+    # Collect imports
+    imports = list(filter(lambda x: x.type == parser.NodeType.IMPORT, node.children))
+    for i in imports:
+        code, _ = compile(i, context)
+        asm.extend(code)
+
+    # Store literals into .rodata
+    asm.append("section .rodata")
+    # Collect all strings together to keep in .ro
+    string_literals = collect_children_of_type(node, NodeType.STRING)
+    for n in string_literals:
+        s_id = f"___s{len(context.string_literals) + 1}"
+        context.string_literals[n.token.text] = s_id
+        asm.append(f"{s_id}: db  {string_to_nasm(n.token.text)}, 0")
+
+    # Literal floats have to be stored
+    float_literals = collect_children_of_type(node, NodeType.FLOAT)
+    for flt_node in float_literals:
+        f_id = f"___f{len(context.float_literals) + 1}"
+        asm.append(f"{f_id}: dq {flt_node.token.text}")
+        var = Variable(
+            identifier=f_id,
+            type=VariableType.f64,
+            indirection_count=0,
+            location=f"[{f_id}]",
+        )
+        context.float_literals[flt_node.token.text] = var
+
+    # Collect declarations
+    declarations = list(
+        filter(lambda x: x.type == parser.NodeType.DECLARATION, node.children)
+    )
+    asm.append("section .data")
+    for declaration in filter(lambda d: len(d.children) > 1, declarations):
+        code, _ = compile(declaration, context)
+        asm.extend(code)
+    asm.append("")
+    asm.append("section .bss")
+    for declaration in filter(lambda d: len(d.children) < 2, declarations):
+        code, _ = compile(declaration, context)
+        asm.extend(code)
+    asm.append(" ")
+
+    # Collect funcs, adds them to context
+    functions = collect_functions_from_module(node, context)
+
+    # Compile definitions of the collected functions
     asm.append("section .text")
     for function in functions:
-        asm.extend(compile(function, context))
-    return asm
+        code, _ = compile(function.node, context)
+        asm.extend(code)
+
+    assert len(context.occupied_registers) == 0, (
+        f"Taken regs: {context.occupied_registers}\n{'\n'.join(asm)}'"
+    )
+    return asm, []
+
+
+def string_to_nasm(s):
+    n = [""]
+    p = 0
+    escaping = False
+    while p < len(s):
+        c = s[p]
+        p += 1
+        if escaping and c == "\\":
+            n[-1].append("\\")
+            escaping = False
+        elif escaping and c == "n":
+            n.append(ord("\n"))
+            n.append("")
+            escaping = False
+        elif escaping and c == "t":
+            n.append(ord("\t"))
+            n.append("")
+            escaping = False
+        elif escaping and c == "0":
+            n.append(ord("\0"))
+            n.append("")
+            escaping = False
+        elif c == "\\":
+            escaping = True
+            continue
+        else:
+            n[-1] += c
+    return ", ".join(map(lambda x: f'"{x}"' if isinstance(x, str) else f"{x}", n))
+
+
+def test_str_nasm():
+    print(string_to_nasm("this\\0that\\nIS\\tagain"))
+
+
+# def load_var_to_register(context, var):
+#     if var.indirection_count or not var.type == VariableType.f64:
+#         reg = context.take_a_register()
+#         reg.type = var.type
+#         reg.indirection_count = var.indirection_count
+#         code = [
+#             f"mov {reg}, {var}",
+#         ]
+#     else:
+#         reg = context.take_a_float_register()
+#         code = [
+#             f"mov {reg}, {var}",
+#         ]
+#     return reg, code
 
 
 @node_compiler(parser.NodeType.DECLARATION)
 def compile_declaration(node, context: Context):
-    var = typed_identifier_to_variable(node.children[0])
+    extern = node.children[0].token and node.children[0].token.typ == TokenSpec.EXTERN
+
+    var = typed_identifier_to_variable(
+        node.children[0] if not extern else node.children[1]
+    )
     init = None
-    if len(node.children) > 1:
+    if len(node.children) > (2 if extern else 1):
+        if extern:
+            raise CompileError("Can't set a intialiser to an external. ", node)
         init = node.children[1]
 
-    if not context.use_stack:
+    if extern or not context.use_stack:
         if init and init.type not in (
             NodeType.FLOAT,
             NodeType.INTEGER,
             NodeType.STRING,
+            NodeType.CHARACTER,
         ):
             raise CompileError("Can't initialise with non-constant.", init)
 
@@ -173,18 +315,29 @@ def compile_declaration(node, context: Context):
         var.location = AddressPointer(var.identifier)
         context.globals_[var.identifier] = var
 
+        if extern:
+            return [
+                f"extern {var.identifier}"
+            ], []  # todo this is going in the data sect
+
         if init:
             if init.type == NodeType.STRING:
                 if var.type != VariableType.u8:
-                    raise CompileError("Only asign strings to u8[] types.", node)
-                return [f'{var.identifier}: db "{init.token.text}",0']
+                    raise CompileError("Only assign strings to u8[] types.", node)
+                return [
+                    f"global {var.identifier}",
+                    f"{var.identifier}: db {string_to_nasm(init.token.text)},0",
+                ], []
             else:
                 dd = SizeDefiners[var.size]
-                return [f"{var.identifier}: {dd} {init.token.text}"]
+                return [
+                    f"global {var.identifier}",
+                    f"{var.identifier}: {dd} {init.token.text}",
+                ], []
 
         res = SizeReserves[var.size]
         count = 1 if not isinstance(var, Array) else var.length
-        return [f"{var.identifier}: {res} {count}"]
+        return [f"global {var.identifier}", f"{var.identifier}: {res} {count}"], []
     else:
         if context.is_local_var(var.identifier):
             raise CompileError(
@@ -202,8 +355,7 @@ def compile_declaration(node, context: Context):
                     raise CompileError("Only asign strings to u8[] types.", node)
                 src_str = init.token.text
                 src_id = context.string_literals.get(src_str)
-                if False:  # src_id:
-                    print(context.string_literals)
+                if not src_id:
                     raise CompileError(
                         f'Compiler bug. Missing string literal "{src_str}" in ro data.',
                         node,
@@ -223,16 +375,25 @@ def compile_declaration(node, context: Context):
                 ]
             else:
                 sizespec = SizeSpecifiers[var.size]
-                reg, asm = compile_to_literal(init, context)
+                asm, (reg,) = compile(init, context)
+                if var.type != reg.type:
+                    if isinstance(reg, Literal):
+                        reg.type = var.type
+                    else:
+                        raise CompileError(
+                            f"Type mismatch, {var.identifier} is {var.type} while rval({reg}) is {reg.type}",
+                            node,
+                        )
                 initialise = [*asm, f"mov {sizespec} {var.location}, {reg}"]
+                context.mark_free_if_reg(reg)
 
-        return [f"; {var.identifier} @ {var.location}", *initialise]
+        return [f"; {var.identifier} @ {var.location}", *initialise], []
 
 
 @node_compiler(NodeType.FUNC_DECL)
 def compile_func_decl(node, context: Context):
     identifier = node.children[0]
-    return [f"extern {identifier.token.text}"]
+    return [f"extern {identifier.token.text}"], []
 
 
 @node_compiler(NodeType.FUNC_DEF)
@@ -270,7 +431,7 @@ def compile_func(node, context: Context):
             on_stack=False,
         )
 
-    blk = compile(block, context)
+    blk, _ = compile(block, context)
     context.pop_frame()
     context.current_func = None
     return [
@@ -284,7 +445,7 @@ def compile_func(node, context: Context):
         f"{function.identifier}___ret:",
         "leave",
         "ret",
-    ]
+    ], []
 
 
 @node_compiler(NodeType.BLOCK)
@@ -292,37 +453,38 @@ def compile_block(node, context: Context):
     asm = []
     context.new_frame()
     for child in node.children:
-        print(child)
-        asm.extend(compile(child, context))
+        print(child.type)
+        code, registers = compile(child, context)
+        asm.extend(code)
+        for reg in registers:
+            # some statements such a funccall may have taken a register
+            context.mark_free_if_reg(reg)
     context.pop_frame()
-    return asm
+    return asm, []
 
 
 @node_compiler(NodeType.IDENTIFIER_REF)
 def compile_ref(node, context: Context):
-    # lea rax, [q]        ; Load address of q into rax
     var_name = node.children[0].token.text
     var = context.variables.get(var_name)
     if not var:
         raise CompileError("Unknown variable '{var_name}'", node.children[0])
 
-    reg = context.free_registers.pop()
+    reg = context.take_a_register()
     reg.type = var.type
     reg.indirection_count = var.indirection_count + 1
-    context.occupied_registers.append(reg)
     asm = [f"lea {reg}, {var.location}"]
-    return asm
+    return asm, [reg]
 
 
 @node_compiler(NodeType.DE_REF)
 def compile_de_ref(node, context: Context):
     # note, this is compiling only a an rval, in assignment this is not run
-    ptr, code = compile_to_literal(node.children[0], context)
-    if ptr in context.occupied_registers:  # its a register so use it
+    code, (ptr,) = compile(node.children[0], context)
+    if isinstance(ptr, Register):  # its a register so use it
         reg = ptr
     else:
-        reg = context.free_registers.pop()
-        context.occupied_registers.append(reg)
+        reg = context.take_a_register()
         reg.type = ptr.type
         reg.indirection_count = ptr.indirection_count
         code = [
@@ -335,24 +497,24 @@ def compile_de_ref(node, context: Context):
     reg.indirection_count -= 1
     asm = [*code]  # f"mov qword {reg}, {reg.location}"]
     # use the same register, drop size
+    # can't use the same register as need to zero upper bits..
     asm.append(
         f"mov {SizeSpecifiers[reg.size]}  {reg}, [{reg.full_reg}]; ;cnt={reg.indirection_count}"
     )
-    return asm
+    return asm, [reg]
 
 
 @node_compiler(NodeType.ARRAY_ITEM)
 def compile_array_item(node, context: Context):
     # note, this is compiling only as an rval, in assignment this is not run
     identifier_node, index_expr = node.children
-    index, code = compile_to_literal(index_expr, context)
+    code, (index,) = compile(index_expr, context)
     identifier = context.variables[identifier_node.token.text]
 
-    reg = context.free_registers.pop()
+    reg = context.take_a_register()
     tmp = context.free_registers[0]
     tmp.type = index.type
     tmp.indirection_count = 0
-    context.occupied_registers.append(reg)
     reg.type = identifier.type
     reg.indirection_count = index.indirection_count
     code = [
@@ -367,66 +529,48 @@ def compile_array_item(node, context: Context):
     # use the same register, drop size
     asm.append(f"mov {SizeSpecifiers[reg.size]}  {reg}, [{reg.full_reg}] ; load it ")
     context.mark_free_if_reg(index)
-    return asm
+    return asm, [reg]
 
 
-def compile_to_literal(
-    node: Node, context: Context
-) -> tuple[Literal | Register | Variable, str]:
-    # to an identifier or a register or literal
-    if node.typ in (NodeType.IDENTIFIER,):
-        if node.token.text not in context.variables:
-            raise CompileError(f"Unknown variable {node.token.text}", node)
-        return context.variables[node.token.text], []
-    if node.typ in (NodeType.INTEGER):  # todo literal sizes and types
-        return Literal(node.token.text, type=VariableType.u32), []
-    if node.typ in (NodeType.CHARACTER):
-        return Literal(str(ord(node.token.text)), type=VariableType.u8), []
-
-    asm = compile(node, context)
-    try:
-        # last taken occupied is the reg that compiled into
-        reg = context.occupied_registers[-1]
-    except:
-        raise
-
-    return reg, asm
+@node_compiler(NodeType.IDENTIFIER)
+def compile_identifier(node, context: Context):
+    var_name = node.token.text
+    var = context.variables.get(var_name)
+    if not var:
+        raise CompileError("Unknown variable '{var_name}'", node)
+    return [], [context.variables[var_name]]
 
 
-def notest_compile_to_lit():
-    program = """(a + b - c + 5 + N - Q + a + b)+ (d + e+1)    """
-    tokens = list(TokenSpec.tokenise(program))
-    ex = Expr(tokens)
-    print_tree(ex)
-    context = Context()
-    reg, code = compile_to_literal(ex, context)
-    print("---- CODE ----")
-    print("\n".join(code))
-    print("-------------")
-    print(f"going into {reg}")
-    print(context)
-    assert False, "Forced fail."
+@node_compiler(NodeType.INTEGER)
+def compile_integer(node, context: Context):
+    # todo literal sizes and types
+    return [], [Literal(node.token.text, type=VariableType.u32)]
+
+
+@node_compiler(NodeType.CHARACTER)
+def compile_literal_character(node, context: Context):
+    return [], [Literal(str(ord(node.token.text)), type=VariableType.u8)]
+
+
+@node_compiler(NodeType.FLOAT)
+def compile_literal_float(node, context: Context):
+    return [], [context.float_literals[node.token.text]]
 
 
 @node_compiler(NodeType.ADDITIVE)
 def compile_additive(node: Node, context: Context):
     op = "add" if node.token == TokenSpec.PLUS else "sub"
-    l, code_l = compile_to_literal(node.children[0], context)
+    code_l, (l,) = compile(node.children[0], context)
 
-    if l in context.occupied_registers:  # its a register so use i
+    if isinstance(l, Register):  # its a register so use it
         reg = l
     else:
-        reg = context.free_registers.pop()
+        reg = context.take_a_register()
         reg.set_in_use(l.size)
         reg.indirection_count = l.indirection_count
         reg.type = l.type
-        context.occupied_registers.append(reg)
 
-    if l != reg and l in context.occupied_registers:  # todo dead?
-        context.occupied_registers.remove(l)
-        context.free_registers.append(l)
-
-    r, code_r = compile_to_literal(node.children[1], context)
+    code_r, (r,) = compile(node.children[1], context)
     if not isinstance(r, Literal) and r.size != reg.size:
         raise CompileError(
             f"Size mismatch. {r} is {r.size} bytes, {l} is {l.size} bytes. May need to squelch.",
@@ -437,9 +581,7 @@ def compile_additive(node: Node, context: Context):
             "WARNING: Type mismatch in addition. Sizes match so proceeding. May be bad."
         )
 
-    if r in context.occupied_registers:
-        context.occupied_registers.remove(r)
-        context.free_registers.append(r)
+    context.mark_free_if_reg(r)
 
     ref_muliplier = 1
     if reg.indirection_count:
@@ -452,26 +594,25 @@ def compile_additive(node: Node, context: Context):
         *code_r,  #
         *((f"mov {reg}, {l}",) if l != reg else ()),
         *(f"{op} {reg}, {r}" for _ in range(ref_muliplier)),
-    ]
+    ], [reg]
 
 
 @node_compiler(NodeType.TERM)
 def compile_term(node: Node, context: Context):
-    l, code_l = compile_to_literal(node.children[0], context)
+    code_l, (l,) = compile(node.children[0], context)
 
-    if l in context.occupied_registers:  # its a register so use i
+    if isinstance(l, Register):  # its a register so use i
         reg = l
     else:
-        reg = context.free_registers.pop()
+        reg = context.take_a_register()
         reg.set_in_use(l.size)
         reg.indirection_count = l.indirection_count
         reg.type = l.type
-        context.occupied_registers.append(reg)
 
-    r, code_r = compile_to_literal(node.children[1], context)
-    if not isinstance(r, Literal) and r.size != reg.size:
+    code_r, (r,) = compile(node.children[1], context)
+    if not isinstance(r, Literal) and r.type != reg.type:
         raise CompileError(
-            f"Size mismatch. {r} is {r.size} bytes, {l} is {l.size} bytes. May need to squelch.",
+            f"Size mismatch. {r} is {r.size} bytes {r.type}, {l} is {l.size} bytes {l.type}. May need to squelch.",
             node,
         )
     if r.type != reg.type or (r.indirection_count > 1 != reg.indirection_count > 1):
@@ -479,11 +620,9 @@ def compile_term(node: Node, context: Context):
             "WARNING: Type mismatch in addition. Sizes match so proceeding. May be bad."
         )
 
-    if r in context.occupied_registers:
-        context.occupied_registers.remove(r)
-        context.free_registers.append(r)
+    context.mark_free_if_reg(r)
 
-    if False:  # eiterh is indirection
+    if r.indirection_count or reg.indirection_count:  # either is indirection
         raise CompileError("Can't multiply or divide with a pointer.", node)
 
     asm = [
@@ -491,7 +630,7 @@ def compile_term(node: Node, context: Context):
         *code_r,
     ]
 
-    # if r is not a reg, make it so beause mul needs registers
+    # if r is not a reg, make it so because mul needs registers
     if isinstance(r, Literal):
         rcx = Register("rcx")
         rcx.type = r.type
@@ -502,36 +641,46 @@ def compile_term(node: Node, context: Context):
     rax.type = l.type
     rdx = Register("rdx")
     rdx.type = l.type
+    is_signed = reg.type in [
+        VariableType.i8,
+        VariableType.i16,
+        VariableType.i32,
+        VariableType.i64,
+    ]
+    signed_extend = {8: "cqo", 4: "cdq", 2: "cwd", 1: "cbw"}
     match node.token:
         case TokenSpec.ASTRISK:
             return [
                 *asm,  #
                 f"mov {rax}, {l}",
-                f"mul {r.sizespec} {r}",
+                f"{'mul' if not is_signed else 'imul'} {r.sizespec} {r}",
                 f"mov {reg}, {rax}",
-            ]
+            ], [reg]
         case TokenSpec.DIVIDE:
             return [
                 *asm,  #
                 f"mov {rax}, {l}",
-                "xor rdx, rdx",
-                f"div {r.sizespec} {r}",
+                "xor rdx, rdx" if not is_signed else signed_extend[rax.size],
+                f"{'div' if not is_signed else 'idiv'} {r.sizespec} {r}",
                 f"mov {reg}, {rax}",
-            ]
+            ], [reg]
+
         case TokenSpec.MODULO:
             return [
                 *asm,  #
                 f"mov {rax}, {l}",
-                "xor rdx, rdx",
-                f"div {r.sizespec} {r}",
+                "xor rdx, rdx" if not is_signed else signed_extend[rax.size],
+                f"{'div' if not is_signed else 'idiv'} {r.sizespec} {r}",
                 f"mov {reg}, {rdx}",
-            ]
+            ], [reg]
+        case _:
+            raise CompileError("Compiler bug.", node)
 
 
 @node_compiler(NodeType.ASSIGNMENT)
 def compile_assignment(node, context: Context):
     # compile what will be assigned to it
-    reg, asm = compile_to_literal(node.children[1], context)
+    asm, (reg,) = compile(node.children[1], context)
 
     if node.children[0].type == NodeType.DE_REF:
         decount = 1
@@ -539,7 +688,7 @@ def compile_assignment(node, context: Context):
         while id_node.type == NodeType.DE_REF:
             decount += 1
             id_node = id_node.children[0]
-        lval, get_addr_asm = compile_to_literal(id_node, context)
+        get_addr_asm, (lval,) = compile(id_node, context)
 
         if lval.indirection_count < decount:
             raise CompileError("Tried to deref too many times in lval.", node)
@@ -547,16 +696,15 @@ def compile_assignment(node, context: Context):
         lval.indirection_count -= decount
         sizespec = SizeSpecifiers[lval.size]
         lval.indirection_count += decount
-        if lval not in context.occupied_registers:
+        if isinstance(lval, Register):
+            target_reg = lval
+            load_value = []
+        else:
             # not a register, need to put it in one to be able to deref in x86
             target_reg = context.free_registers[0]
-            target_reg.set_in_use(8)
             load_value = [
                 f"mov {target_reg.full_reg}, {lval.location}",
             ]
-        else:
-            target_reg = lval
-            load_value = []
 
         # need to deref decount-1 more times now
         load_value.extend(
@@ -580,26 +728,26 @@ def compile_assignment(node, context: Context):
             *get_addr_asm,
             *load_value,
             f"mov {sizespec} [{target_address}], {reg}",  # assign the value
-        ]
+        ], []
 
     elif (
         node.children[0].type == NodeType.ARRAY_ITEM
     ):  # todo I don't like this specialism branching
         identifier_node, index_expr = node.children[0].children
-        index, code = compile_to_literal(index_expr, context)
+        code, (index,) = compile(index_expr, context)
         identifier = context.variables[identifier_node.token.text]
         sizespec = SizeSpecifiers[identifier.size]
-        if index in context.occupied_registers:  # its a register so use it
+        if isinstance(index, Register):  # its a register so use it
             target_address = index
         else:
-            target_address = context.free_registers.pop()
-            context.occupied_registers.append(target_address)
+            target_address = context.take_a_register()
             target_address.type = identifier.type
             target_address.indirection_count = identifier.indirection_count + 1
             tmp = context.free_registers[0]
             tmp.type = index.type
             tmp.indirection_count = 0
             code = [
+                *asm,
                 *code,
                 f"lea {target_address.full_reg}, {identifier}",
                 f"xor {tmp.full_reg}, {tmp.full_reg}",  # horid temp to zero upper bits for addition
@@ -616,28 +764,38 @@ def compile_assignment(node, context: Context):
         ]
         context.mark_free_if_reg(reg)
         context.mark_free_if_reg(target_address)
-        return asm
+        return asm, []
     else:
         var = context.variables[node.children[0].token.text]
         sizespec = SizeSpecifiers[var.size]
+        if var.size != reg.size:
+            if isinstance(reg, Literal):
+                reg.type = var.type
+            else:
+                raise CompileError("Size mismatch.", node)
 
         context.mark_free_if_reg(reg)
-        return [*asm, f"mov {sizespec} {var.location}, {reg}"]
+        return [*asm, f"mov {sizespec} {var.location}, {reg}"], []
 
 
 @node_compiler(NodeType.RETURN)
 def compile_return(node, context: Context):
     if len(node.children) == 1:
         ret = node.children[0]
-        reg, asm = compile_to_literal(ret, context)
+        asm, (reg,) = compile(ret, context)
         rax = Register("rax")
-        rax.set_in_use(reg.size)
         rax.type = reg.type
         rax.indirection_count = reg.indirection_count
         asm = (*asm, "xor rax, rax", f"mov {rax}, {reg}")
+        context.mark_free_if_reg(reg)
     else:
         asm = []
-    return [*asm, f"jmp {context.current_func.identifier}___ret"]
+    return [*asm, f"jmp {context.current_func.identifier}___ret"], []
+
+
+@node_compiler(NodeType.TERMINATOR)
+def compile_terminator(node, context: Context):
+    return [], []
 
 
 @node_compiler(NodeType.FUNC_CALL)
@@ -650,23 +808,48 @@ def compile_call(node, context: Context):
         raise CompileError(f"No function {function_name}.", node)
 
     param_fill_asm = []
+    param_push_asm = []
+    param_pop_asm = []
+    input_params = node.children[1:]
     for parameter, i, parameter_decl in zip(
-        node.children[1:], range(len(function.parameters)), function.parameters
+        input_params, range(len(function.parameters)), function.parameters
     ):
         target_register = ArgumentRegistersBySize[parameter_decl.size][i]
-        p_reg, asm = compile_to_literal(parameter, context)
+        target_register_full = ArgumentRegistersBySize[8][i]
+        asm, (p_reg,) = compile(parameter, context)
+        if (
+            p_reg.type != parameter_decl.type
+            or p_reg.indirection_count != parameter_decl.indirection_count
+        ):
+            raise CompileError(
+                "Function call parameter type mismatch. "
+                + f"'{parameter_decl.identifier}' must be {parameter_decl.type} {'ref' if parameter_decl.indirection_count else ''}",
+                node,
+            )
         asm.append(
             f"mov {SizeSpecifiers[parameter_decl.size]} {target_register}, {p_reg}"
         )
+        param_push_asm.append(f"push {target_register_full}")
+        param_pop_asm.append(f"pop {target_register_full}")
         param_fill_asm.extend(asm)
         context.mark_free_if_reg(p_reg)
-
-    return_val = Register("rax")
-    return_val.set_in_use(function.size)
+    param_pop_asm = reversed(param_pop_asm)
+    rax = Register("rax")
+    rax.type = function.type
+    rax.indirection_count = function.indirection_count
+    return_val = context.take_a_register()
     return_val.type = function.type
     return_val.indirection_count = function.indirection_count
-    context.occupied_registers.append(return_val)
-    return [*param_fill_asm, f"call {function_name}"]
+
+    return [
+        *param_push_asm,
+        *param_fill_asm,
+        "xor rax, rax",
+        f"call {function_name}",
+        f"xor {return_val.full_reg}, {return_val.full_reg}",
+        f"mov {return_val}, {rax}",
+        *param_pop_asm,
+    ], [return_val]
 
 
 @node_compiler(NodeType.FOR_ARRAY_LOOP)
@@ -695,7 +878,12 @@ def compile_for(node: Node, context: Context):
     element.location = RBP(-context.locals_stack_size)
     context.variables[element.identifier] = element
 
-    loop_body = compile(block, context)
+    context.break_out_point.append(f".{loop_id}_end")
+    context.continue_point.append(f".{loop_id}_tail")
+    loop_body, _ = compile(block, context)
+    context.break_out_point.pop()
+    context.continue_point.pop()
+
     asm = [
         f".{loop_id}_begin:",
         f"mov qword {index.location}, 0        ; zero index",
@@ -714,22 +902,50 @@ def compile_for(node: Node, context: Context):
     ]
 
     context.pop_frame()
-    return asm
+    return asm, []
+
+
+@node_compiler(NodeType.WHILE_LOOP)
+def compile_while(node: Node, context: Context):
+    relational_node, block = node.children
+    loop_id = f"while_{node.id}"
+
+    condition_asm, (condition,) = compile(relational_node, context)
+
+    context.break_out_point.append(f".{loop_id}_end")
+    context.continue_point.append(f".{loop_id}_start")
+    loop_body, _ = compile(block, context)
+    context.break_out_point.pop()
+    context.continue_point.pop()
+    reg_for_comparer = Register("rax")
+    reg_for_comparer.type = condition.type
+    asm = [
+        f".{loop_id}_start:",
+        *condition_asm,
+        "; check for true",
+        f"mov {reg_for_comparer}, {condition.location}",
+        f"cmp byte {reg_for_comparer}, 1",
+        f"jnz .{loop_id}_end",
+        *loop_body,
+        f"jmp .{loop_id}_start",
+        f".{loop_id}_end:",
+    ]
+    context.mark_free_if_reg(condition)
+
+    return asm, []
 
 
 @node_compiler(NodeType.BOOLEAN)
 def compile_for_bool(node: Node, context: Context):
-    asm = []
-    reg = context.free_registers.pop()
+    reg = context.take_a_register()
     reg.type = VariableType.u8
     reg.indirection_count = 0
 
-    context.occupied_registers.append(reg)
     if node.token.typ == TokenSpec.TRUE:
         asm = [f"mov {reg}, 1"]
     else:
         asm = [f"mov {reg}, 0"]
-    return asm
+    return asm, [reg]
 
 
 @node_compiler(NodeType.FOR_RANGE_LOOP)
@@ -739,19 +955,29 @@ def compile_for_range(node: Node, context: Context):
     var = typed_identifier_to_variable(identifier_node)
     # todo check the var is an integer...
 
-    context.new_frame()
+    # context.new_frame()
     context.locals_stack_size += var.size
     var.location = RBP(-context.locals_stack_size)
     context.variables[var.identifier] = var
 
-    start = int(range_node.children[0].token.text)
-    end = int(range_node.children[1].token.text)
-    step = int(range_node.children[2].token.text) if len(range_node.children) > 2 else 1
-
-    loop_body = compile(block, context)
+    start_asm, (start,) = compile(range_node.children[0], context)
+    end_asm, (end,) = compile(range_node.children[1], context)
+    step_asm, (step,) = (
+        compile(range_node.children[2], context)
+        if len(range_node.children) > 2
+        else ([], (1,))
+    )
+    context.break_out_point.append(f".{loop_id}_end")
+    context.continue_point.append(f".{loop_id}_tail")
+    loop_body, _ = compile(block, context)
+    context.break_out_point.pop()
+    context.continue_point.pop()
     reg_for_comparer = Register("rax")
     reg_for_comparer.type = var.type
     asm = [
+        *start_asm,
+        *end_asm,
+        *step_asm,
         f".{loop_id}_begin:",
         f"mov {var.sizespec} {var.location}, {start}        ; range start",
         f".{loop_id}_start:",
@@ -764,36 +990,42 @@ def compile_for_range(node: Node, context: Context):
         f"   jmp .{loop_id}_start",
         f".{loop_id}_end:",
     ]
-
-    context.pop_frame()
-    return asm
+    context.mark_free_if_reg(start)
+    context.mark_free_if_reg(end)
+    context.mark_free_if_reg(step)
+    # context.pop_frame()
+    return asm, []
 
 
 @node_compiler(NodeType.RELATIONAL)
 def compile_relational(node, context: Context):
     left, right = node.children
-    left, left_asm = compile_to_literal(left, context)
-    right, right_asm = compile_to_literal(right, context)
+    left_asm, (left,) = compile(left, context)
+    right_asm, (right,) = compile(right, context)
+
+    if left.type in SignedIntVariableTypes or right.type in SignedIntVariableTypes:
+        is_signed = True
+    else:
+        is_signed = False
 
     condition = node.token.typ
     match condition:
         case TokenSpec.LESS_THAN:
-            op = "setb"
+            op = "setb" if not is_signed else "setl"
         case TokenSpec.MORE_THAN:
-            op = "seta"
+            op = "seta" if not is_signed else "setg"
         case TokenSpec.LESS_THAN_EQ:
-            op = "setbe"
+            op = "setbe" if not is_signed else "setle"
         case TokenSpec.MORE_THAN_EQ:
-            op = "setae"
+            op = "setae" if not is_signed else "setge"
         case TokenSpec.EQUAL:
             op = "sete"
         case TokenSpec.NOT_EQ:
             op = "setne"
 
-    result = context.free_registers.pop()
+    result = context.take_a_register()
     result.type = VariableType.u8
     result.indirection_count = 0
-    context.occupied_registers.append(result)
     rax = Register("rax")
     rax.type = left.type
 
@@ -807,18 +1039,56 @@ def compile_relational(node, context: Context):
     ]
     context.mark_free_if_reg(left)
     context.mark_free_if_reg(right)
-    return asm
+    return asm, [result]
+
+
+@node_compiler(NodeType.NEGATED_RELATIONAL)
+def compile_negated_relational(node, context: Context):
+    rel_asm, (relational,) = compile(node.children[0], context)
+
+    if isinstance(relational, Register):
+        target_reg = relational
+        load_value = []
+    else:
+        # not a register, need to put it in one to be able to xor it safe
+        target_reg = context.take_a_register()
+        target_reg.type = relational.type
+        target_reg.indirection_count = relational.indirection_count
+        load_value = [
+            f"mov {target_reg}, {relational.location}",
+        ]
+        context.mark_free_if_reg(relational)
+
+    return [*rel_asm, *load_value, f"xor {target_reg.sizespec} {target_reg}, 1"], [
+        target_reg
+    ]
+
+
+@node_compiler(NodeType.BREAK)
+def compile_break(node, context: Context):
+    if not context.break_out_point:
+        raise CompileError("Can't break outside of a loop.", node)
+    jmp_to = context.break_out_point[-1]  # dont pop it as it gets popped by the loop
+    return [f"jmp {jmp_to}"], []
+
+
+@node_compiler(NodeType.CONTINUE)
+def compile_break(node, context: Context):
+    if not context.continue_point:
+        raise CompileError("Can't continue outside of a loop.", node)
+    jmp_to = context.continue_point[-1]  # dont pop it as it gets popped by the loop
+    return [f"jmp {jmp_to}"], []
 
 
 @node_compiler(NodeType.SQUELCH)
 def compile_squelch(node, context: Context):
     target_type, var_node = node.children
     target_type = TokenVariableTypeMap[target_type.token.typ]
-    var = context.variables.get(var_node.token.text)
-    if not var:
-        raise CompileError(f"Unknown variable {var_node.token.text}", node)
-    reg = context.free_registers.pop()
-    context.occupied_registers.append(reg)
+    # var = context.variables.get(var_node.token.text)
+    # if not var:
+    # raise CompileError(f"Unknown variable {var_node.token.text}", node)
+    prep_var_asm, (var,) = compile(var_node, context)
+    reg = context.take_a_register()
     reg.type = target_type
     reg.indirection_count = var.indirection_count
 
@@ -831,33 +1101,48 @@ def compile_squelch(node, context: Context):
         # squelch down
         reg.type = target_type
 
+    if isinstance(var, Register):
+        # could be moving a reg to a reg so need to match
+        var.type = reg.type
+
     asm = [
+        *prep_var_asm,
         f"xor {reg.full_reg}, {reg.full_reg}",  # zero it
-        f"mov {reg}, {var};  squelch",
+        f"mov {reg}, {var};",
     ]
     reg.type = target_type
-    print(f"Compiled squelch {asm}, type is {reg.type}")
-
-    return asm
+    context.mark_free_if_reg(var)
+    return asm, [reg]
 
 
 @node_compiler(NodeType.IF_STATEMENT)
 def compile_if(node, context: Context):
     condition = node.children[0]
-    condition, eval_expr = compile_to_literal(condition, context)
+    eval_expr, (condition,) = compile(condition, context)
+
+    if isinstance(condition, Literal):
+        c = context.free_registers[0]
+        c.type = condition.type
+        c.indirection_count = condition.indirection_count
+        comparison = [f"mov {c}, {condition}", f"cmp byte {c}, 0"]
+    else:
+        comparison = [
+            f"cmp byte {condition}, 0",
+        ]
+
     pos_label = f".pos_{id(node)}"
     end_label = f".end_if_{id(node)}"
     comparison = [
-        f"cmp byte {condition}, 0",
+        *comparison,
         f"jnz {pos_label}",
     ]
-
-    negative_block = (
-        compile_block(node.children[2], context) if len(node.children) > 2 else []
-    )
-    positive_block = compile_block(node.children[1], context)
-
     context.mark_free_if_reg(condition)
+
+    negative_block, _ = (
+        compile_block(node.children[2], context) if len(node.children) > 2 else ([], [])
+    )
+
+    positive_block, _ = compile_block(node.children[1], context)
 
     return [
         *eval_expr,
@@ -867,17 +1152,24 @@ def compile_if(node, context: Context):
         f"{pos_label}:",
         *positive_block,
         f"{end_label}:",
-    ]
+    ], []
 
 
-def compiler(text, debug=False):
-    tokens = list(TokenSpec.tokenise(text))
+def parse_file(file, debug=False):
+    with open(file, "r") as in_f:
+        src = in_f.read()
+    tokens = list(TokenSpec.tokenise(src))
     if debug:
         for p in tokens:
             print(p.typ, p.text)
     module = Module(tokens)
+    return module
+
+
+def compiler(file, debug=False):
+    module = parse_file(file, debug)
 
     if not module:
         return None
     print_tree(module)
-    return compile(module, Context())
+    return compile(module, Context(filename=file))[0]

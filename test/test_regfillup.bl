@@ -1,5 +1,6 @@
 # expected_exit_code = 0
-
+# expect to call a lot without running out
+# of the general purp registers
 
 external def print_string(str : <u8>, len: u32) : u8;
 
@@ -53,35 +54,15 @@ def print_number(number: u64) :u8{
 def main(): u8 {
     a:u64=19302
     b:u8 = print_number(a)
+    print_number(u64|18|)
+    print_number(u64|18|)
+    print_number(u64|18|)
+    print_number(u64|18|)
+    print_number(u64|18|)
+    print_number(u64|18|)
+    print_number(u64|18|)
+    print_number(u64|18|)
+    print_number(u64|18|)
 
-    if 10 < 100 {
-	    #print_number(10)
-    } else {
-	    return 1
-    }
-    
-    if 10==100 {
-	    return 1
-    } else {
-	    #print_number(100)
-    }
-    
-    if 10+99<100 {
-	    return 1
-    } else {
-	   # print_number(109)
-    }
-
-    if 2*9 == 18 {
-	    #print_number(18)
-    } else {return 1}
-
-
-    if i32|-1| / i32|-1| != 1 { return 1}
-
-
-    if i32|-10| / i32|5| != -2 { return 2}
-
-    if i32|10| / i32|-5| != -2 { return 3}
     return 0
 } 

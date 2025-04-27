@@ -1,0 +1,9 @@
+# expected_exit_code = 0
+# test-inc
+
+import .libprint
+
+def main(): u8 {
+
+    return EXIT_SUCCESS
+} 

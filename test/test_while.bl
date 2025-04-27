@@ -1,0 +1,17 @@
+# expected_exit_code = 27
+external def print_string(str : <u8>, len: u32) : u8;
+
+round:u8[12] = "Round we go."
+hello:u8[12] = "WHILE WE GO."
+def main(): u32 {
+    #print_string(>hello<, 12)
+    test:u32 = 2
+    total:u32 = 0
+    while test <= 7 {
+        total = total + test
+        test = test + 1
+        #print_string(>round<, 12)
+    }
+    return total;
+   
+} 

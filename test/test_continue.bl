@@ -1,0 +1,27 @@
+# expected_exit_code = 0
+# Break out of a loop should work
+
+def main(): u8 {
+    for 0..10 as a:u8 {
+      if (a < 5) {
+        continue
+      }
+      break
+    }
+    if (a != 5) {
+        return 1
+    }
+
+    a=0
+    while (a<10) {
+       a=a+1
+       if a<5 {
+          continue
+       }
+           break
+    }
+    if (a>6) {
+        return 1
+    }
+    return 0
+}

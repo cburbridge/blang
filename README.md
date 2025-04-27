@@ -1,15 +1,49 @@
 # todo
-fix squelching of derefs and liteals
-fix deref an array item >a[0]<
-fix if(1) and if(0) - literal not i reg
-string escapes
-while
-continue
-break
-negatives
-floats
-structs
-better parse errors
+
+## Bugs
+- fix:  assign var to a var
+- fix:  deref an array item >a[0]<   - >a< + n workaround
+- fix:  checking function calls have sufficient parameters
+- fix:  check stack alignment - its going to be bad
+- fix:  deref into self register needs to zero upper bits
+- fix:  intialise with e.g u8|99| - not a const
+
+## Feat
+
+- maybe cache builds
+- double break or for...else
+- type safe overhaul, unify checks
+- better parse errors
+- add debug tracing with .loc and .file directives
+
+## Clean
+- no need for global strings to go into ro data too
+
+## Core
+- or & and operation
+- floats
+- structs
+- bit operations
+
+----------
+
+# Done
+DONE  get printf working
+DONE string escapes
+DONE tidy: move terminator out of node parses into own parser
+DONE  fix calling fuction with wrong type / not ref that should be paramteter
+DONE if(1) and if(0) - literal not in reg
+DONE xor rax before func call brok test_divide
+DONE consider possible of removing {} for whitespace
+DONE  not condition
+DONE fix bug returning a return
+DONE negatives
+DONE continue
+DONE while
+DONE break 
+DONE for loop var should promote scope
+DONE fix range loops allow varible size
+DONE fix squelching of derefs and liteals
 DONE multiplication
 DONE logicals
 DONE if
