@@ -133,6 +133,7 @@ class Literal(SizePropMixin):
     # Similar to a variable
     type: VariableType = None
     indirection_count: int = 0
+    length: int = 1
 
     def __str__(self):
         return self.value

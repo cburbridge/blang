@@ -299,13 +299,6 @@ def compile_declaration(node, context: Context):
         init = node.children[1]
 
     if extern or not context.use_stack:
-        if init and init.type not in (
-            NodeType.FLOAT,
-            NodeType.INTEGER,
-            NodeType.STRING,
-            NodeType.CHARACTER,
-        ):
-            raise CompileError("Can't initialise with non-constant.", init)
 
         if context.is_local_var(var.identifier):
             raise CompileError(
@@ -321,19 +314,18 @@ def compile_declaration(node, context: Context):
             ], []  # todo this is going in the data sect
 
         if init:
-            if init.type == NodeType.STRING:
-                if var.type != VariableType.u8:
-                    raise CompileError("Only assign strings to u8[] types.", node)
-                return [
-                    f"global {var.identifier}",
-                    f"{var.identifier}: db {string_to_nasm(init.token.text)},0",
-                ], []
-            else:
-                dd = SizeDefiners[var.size]
-                return [
-                    f"global {var.identifier}",
-                    f"{var.identifier}: {dd} {init.token.text}",
-                ], []
+            code, (literal,) = compile(init, context)
+            if not isinstance(literal, Literal):
+                raise CompileError(
+                    f"Can't initialise '{var.identifier}' with non-constant value.",
+                    init,
+                )
+            # todo check sizes match
+            dd = SizeDefiners[var.size]
+            return [
+                f"global {var.identifier}",
+                f"{var.identifier}: {dd} {literal.value}",
+            ], []
 
         res = SizeReserves[var.size]
         count = 1 if not isinstance(var, Array) else var.length
@@ -566,6 +558,12 @@ def compile_literal_character(node, context: Context):
 @node_compiler(NodeType.FLOAT)
 def compile_literal_float(node, context: Context):
     return [], [context.float_literals[node.token.text]]
+
+
+@node_compiler(NodeType.STRING)
+def compile_literal_string(node, context: Context):
+    val = string_to_nasm(node.token.text)
+    return [], [Literal(val, type=VariableType.u8, length=len(node.token.text))]
 
 
 @node_compiler(NodeType.ADDITIVE)
@@ -1089,15 +1087,17 @@ def compile_break(node, context: Context):
 def compile_squelch(node, context: Context):
     target_type, var_node = node.children
     target_type = TokenVariableTypeMap[target_type.token.typ]
-    # var = context.variables.get(var_node.token.text)
-    # if not var:
-    # raise CompileError(f"Unknown variable {var_node.token.text}", node)
+    target_size = TypeSizes[target_type]
+
     prep_var_asm, (var,) = compile(var_node, context)
+    if isinstance(var, Literal):
+        var.type = target_type
+        return [], [var]
+
     reg = context.take_a_register()
     reg.type = target_type
     reg.indirection_count = var.indirection_count
 
-    target_size = TypeSizes[target_type]
     source_size = var.size
     if target_size > source_size:
         # squelch up

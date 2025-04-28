@@ -5,7 +5,6 @@
 - fix:  checking function calls have sufficient parameters
 - fix:  check stack alignment - its going to be bad
 - fix:  deref into self register needs to zero upper bits
-- fix:  intialise with e.g u8|99| - not a const
 - fix:  comment lines are throwing the line numbers
 - 
 ## Feat
@@ -28,6 +27,7 @@
 ----------
 
 # Done
+DONE  fix:  intialise with e.g u8|99| - not a const when not a stack var
 DONE fix:  assign var to a var
 DONE  get printf working
 DONE string escapes

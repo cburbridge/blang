@@ -2,6 +2,8 @@
 
 def value():u32 { return 99}
 
+c:u8 = u8|99|
+
 def main(): u64 {
     a:u32 = value()
     b: u32
