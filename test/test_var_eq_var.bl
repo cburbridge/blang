@@ -1,0 +1,10 @@
+# expected_exit_code = 99
+
+def value():u32 { return 99}
+
+def main(): u64 {
+    a:u32 = value()
+    b: u32
+    b = a
+    return b
+} 

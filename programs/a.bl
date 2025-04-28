@@ -1,0 +1,8 @@
+def fish():u8 :
+    return 0
+}
+
+def chips():u8 {
+  fish()
+}
+

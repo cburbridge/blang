@@ -376,6 +376,8 @@ def compile_declaration(node, context: Context):
             else:
                 sizespec = SizeSpecifiers[var.size]
                 asm, (reg,) = compile(init, context)
+                if not isinstance(reg, Literal):  # err hack ot avoid a:8 = u8|9|
+                    reg = ensure_is_a_register(asm, reg, context)
                 if var.type != reg.type:
                     if isinstance(reg, Literal):
                         reg.type = var.type
@@ -477,20 +479,29 @@ def compile_ref(node, context: Context):
     return asm, [reg]
 
 
+def ensure_is_a_register(code, maybe_reg, context):
+    """Ensures value is in a register by allocating one if needed.
+
+    :param code: List of assembly instructions to append new instructions to
+    :param maybe_reg: Register or other value that needs to be in a register
+    :param context: Compilation context for register allocation
+    :return: Tuple of (assembly instructions, register containing value)
+    """
+    if isinstance(maybe_reg, Register):
+        return maybe_reg
+    else:
+        reg = context.take_a_register()
+        reg.type = maybe_reg.type
+        reg.indirection_count = maybe_reg.indirection_count
+        code.append(f"mov {reg.full_reg}, {maybe_reg}")
+        return reg
+
+
 @node_compiler(NodeType.DE_REF)
 def compile_de_ref(node, context: Context):
     # note, this is compiling only a an rval, in assignment this is not run
     code, (ptr,) = compile(node.children[0], context)
-    if isinstance(ptr, Register):  # its a register so use it
-        reg = ptr
-    else:
-        reg = context.take_a_register()
-        reg.type = ptr.type
-        reg.indirection_count = ptr.indirection_count
-        code = [
-            *code,
-            f"mov {reg.full_reg}, {ptr}",
-        ]
+    reg = ensure_is_a_register(code, ptr, context)
 
     if reg.indirection_count < 1:
         raise CompileError("Problem. Can't dereference a non-reference.", node)
@@ -562,13 +573,7 @@ def compile_additive(node: Node, context: Context):
     op = "add" if node.token == TokenSpec.PLUS else "sub"
     code_l, (l,) = compile(node.children[0], context)
 
-    if isinstance(l, Register):  # its a register so use it
-        reg = l
-    else:
-        reg = context.take_a_register()
-        reg.set_in_use(l.size)
-        reg.indirection_count = l.indirection_count
-        reg.type = l.type
+    reg = ensure_is_a_register(code_l, l, context)
 
     code_r, (r,) = compile(node.children[1], context)
     if not isinstance(r, Literal) and r.size != reg.size:
@@ -592,7 +597,6 @@ def compile_additive(node: Node, context: Context):
     return [
         *code_l,
         *code_r,  #
-        *((f"mov {reg}, {l}",) if l != reg else ()),
         *(f"{op} {reg}, {r}" for _ in range(ref_muliplier)),
     ], [reg]
 
@@ -601,13 +605,7 @@ def compile_additive(node: Node, context: Context):
 def compile_term(node: Node, context: Context):
     code_l, (l,) = compile(node.children[0], context)
 
-    if isinstance(l, Register):  # its a register so use i
-        reg = l
-    else:
-        reg = context.take_a_register()
-        reg.set_in_use(l.size)
-        reg.indirection_count = l.indirection_count
-        reg.type = l.type
+    reg = ensure_is_a_register(code_l, l, context)
 
     code_r, (r,) = compile(node.children[1], context)
     if not isinstance(r, Literal) and r.type != reg.type:
@@ -682,6 +680,12 @@ def compile_assignment(node, context: Context):
     # compile what will be assigned to it
     asm, (reg,) = compile(node.children[1], context)
 
+    # put it into a register as some ops cant work off memory
+    if not isinstance(
+        reg, Literal
+    ):  # this is a hack to allow a:u8=9 otherwise 9 is a u32 and needs squelching
+        reg = ensure_is_a_register(asm, reg, context)
+
     if node.children[0].type == NodeType.DE_REF:
         decount = 1
         id_node = node.children[0].children[0]
@@ -696,6 +700,7 @@ def compile_assignment(node, context: Context):
         lval.indirection_count -= decount
         sizespec = SizeSpecifiers[lval.size]
         lval.indirection_count += decount
+
         if isinstance(lval, Register):
             target_reg = lval
             load_value = []
