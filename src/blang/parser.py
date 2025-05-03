@@ -1,4 +1,5 @@
 import copy
+from dataclasses import dataclass
 import enum
 from .tokeniser import TokenSpec
 
@@ -12,6 +13,19 @@ class ParseError(Exception):
         return f"{self.message}"
 
 
+@dataclass
+class NodeExtra:
+    """Extra detail added to a node before compiling but after parsing."""
+
+    precompiled: bool = False
+    is_literal: bool = False
+    data_type: str | None = None
+    potential_size_mismatch: bool = False
+    is_lvalue: bool = False
+    is_rvalue: bool = False
+    produces_value: bool = False
+
+
 class Node:
     def __init__(self, type, token=None, children=None, parent=None, tokens=None):
         self.token = token
@@ -22,8 +36,16 @@ class Node:
         self._tokens = tokens
         self._eaten = 0
         self.blang = ""
+        self.extra = NodeExtra()
 
-    def eat(self, token, set_leaf=False, set_child=False, ignore_space=True, ignore_linebreak=True):
+    def eat(
+        self,
+        token,
+        set_leaf=False,
+        set_child=False,
+        ignore_space=True,
+        ignore_linebreak=True,
+    ):
         if len(self._tokens) < self._eaten + 1:
             raise ParseError("unexpected end of input.", self)
 
@@ -34,7 +56,11 @@ class Node:
             ignores.append(TokenSpec.NEWLINE)
         if ignore_space:
             ignores.append(TokenSpec.WHITESPACE)
-        while ignores and len(self._tokens) - 1 > self._eaten and self._tokens[self._eaten].typ in ignores:
+        while (
+            ignores
+            and len(self._tokens) - 1 > self._eaten
+            and self._tokens[self._eaten].typ in ignores
+        ):
             self._eaten += 1
 
         if self._tokens[self._eaten] == token:
@@ -49,7 +75,7 @@ class Node:
         raise ParseError(f"expected {token}", self)
 
     def eat_child(self, ChildType):
-        n = ChildType(self._tokens[self._eaten:])
+        n = ChildType(self._tokens[self._eaten :])
         if n:
             self._eaten += n._eaten
             self.children.append(n)
@@ -57,7 +83,7 @@ class Node:
         raise ParseError(f"Expected {ChildType}", self)
 
     def peek_child(self, ChildType):
-        n = ChildType(self._tokens[self._eaten:])
+        n = ChildType(self._tokens[self._eaten :])
         return n
 
     @property
@@ -68,7 +94,10 @@ class Node:
     def indent_count(self):
         indent = 0
         first_none_white = 0
-        while self._tokens[first_none_white].typ in (TokenSpec.WHITESPACE, TokenSpec.NEWLINE):
+        while self._tokens[first_none_white].typ in (
+            TokenSpec.WHITESPACE,
+            TokenSpec.NEWLINE,
+        ):
             first_none_white += 1
 
         # count white spaces spaces backwards
@@ -84,7 +113,7 @@ def maybe(method):
     def wrapper(*args, **kwargs):
         try:
             return method(*args, **kwargs)
-        except ParseError as p:
+        except ParseError:
             return False
 
     return wrapper
@@ -131,6 +160,7 @@ class NodeType(enum.StrEnum):
     CHARACTER = enum.auto()
     TERMINATOR = enum.auto()
     IMPORT = enum.auto()
+    ELLIPSIS = enum.auto()
 
 
 def parser(type: NodeType):
@@ -145,7 +175,7 @@ def parser(type: NodeType):
                     # the chosen node
                     created_node._eaten = prototype_node._eaten
                 return created_node
-            except ParseError as p:
+            except ParseError:
                 return None
 
         return wrapper
@@ -225,19 +255,19 @@ def Character(node):
     node.blang = f"'{node.token.text}'"
     return node
 
+
 @parser(NodeType.TERMINATOR)
 def Terminator(node):
     node.eat(TokenSpec.TERMINATOR, set_leaf=True)
-    node.blang = f"';'"
+    node.blang = "';'"
     return node
-
 
 
 @parser(NodeType.ARRAY)
 def Array(node):
     node.eat_child(OneOf(BaseType, RefType))
     node.eat(TokenSpec.LSQBRACKET)
-    node.eat(TokenSpec.INTEGER, set_child=True)
+    node.eat_child(Integer)
     node.eat(TokenSpec.RSQBRACKET)
     node.blang = f"{node.children[0].blang}[{node.children[1].blang}]"
     return node
@@ -275,7 +305,7 @@ def TypedIdentifier(node):
 
 @parser(NodeType.DECLARATION)
 def Declaration(node):
-    is_external = maybe(node.eat)(TokenSpec.EXTERN,set_child=True)
+    is_external = maybe(node.eat)(TokenSpec.EXTERN, set_child=True)
     node.eat_child(TypedIdentifier)
     node.blang = node.children[0].blang
     if not is_external and maybe(node.eat)(TokenSpec.ASSIGN):
@@ -369,11 +399,22 @@ def FuncCall(node):
     return node
 
 
+@parser(NodeType.ELLIPSIS)
+def Ellipsis(node):
+    node.eat(TokenSpec.ELLIPSIS, set_leaf=True)
+    node.blang = "..."
+    return node
+
+
 @parser(NodeType.PARAMETER_LIST)
 def ParameterList(node):
     node.eat(TokenSpec.LPAREN)
     node.blang = "("
     while True:
+        if maybe(node.eat_child)(Ellipsis):
+            node.blang += "..."
+            break
+
         if not maybe(node.eat_child)(TypedIdentifier):
             break
         node.blang += " " + node.children[-1].blang
@@ -395,11 +436,11 @@ def FuncDef(node):
     node.eat_child(Type)
     node.eat_child(Block)
     node.blang = (
-            "def "
-            + node.children[0].blang
-            + node.children[1].blang
-            + ": "
-            + node.children[2].blang
+        "def "
+        + node.children[0].blang
+        + node.children[1].blang
+        + ": "
+        + node.children[2].blang
     )
     return node
 
@@ -413,11 +454,11 @@ def FuncDecl(node):
     if maybe(node.eat)(TokenSpec.COLON):
         node.eat_child(Type)
     node.blang = (
-            "extern def "
-            + node.children[0].blang
-            + node.children[1].blang
-            + ": "
-            + node.children[2].blang
+        "extern def "
+        + node.children[0].blang
+        + node.children[1].blang
+        + ": "
+        + node.children[2].blang
     )
     return node
 
@@ -465,7 +506,7 @@ def CapturedExpression(node):
 @parser(NodeType.BOOLEAN)
 def Boolean(node):
     if maybe(node.eat)(TokenSpec.TRUE, set_leaf=True) or maybe(node.eat)(
-            TokenSpec.FALSE, set_leaf=True
+        TokenSpec.FALSE, set_leaf=True
     ):
         node.blang = node.token.text
         return node
@@ -491,7 +532,7 @@ def Additive(node):
     node.eat_child(Term)
     node.blang = node.children[0].blang
     while maybe(node.eat)(TokenSpec.MINUS, set_leaf=True) or maybe(node.eat)(
-            TokenSpec.PLUS, set_leaf=True
+        TokenSpec.PLUS, set_leaf=True
     ):
         node.blang += " " + node.token.text + " "
         node.eat_child(Term)
@@ -510,9 +551,9 @@ def Term(node):
     node.eat_child(Factor)
     node.blang = node.children[0].blang
     while (
-            maybe(node.eat)(TokenSpec.ASTRISK, set_leaf=True)
-            or maybe(node.eat)(TokenSpec.DIVIDE, set_leaf=True)
-            or maybe(node.eat)(TokenSpec.MODULO, set_leaf=True)
+        maybe(node.eat)(TokenSpec.ASTRISK, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.DIVIDE, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.MODULO, set_leaf=True)
     ):
         node.eat_child(Factor)
         node.blang += node.token.text
@@ -531,12 +572,12 @@ def Relational(node):
     node.eat_child(Additive)
     node.blang = node.children[0].blang
     if (
-            maybe(node.eat)(TokenSpec.MORE_THAN, set_leaf=True)
-            or maybe(node.eat)(TokenSpec.LESS_THAN, set_leaf=True)
-            or maybe(node.eat)(TokenSpec.MORE_THAN_EQ, set_leaf=True)
-            or maybe(node.eat)(TokenSpec.LESS_THAN_EQ, set_leaf=True)
-            or maybe(node.eat)(TokenSpec.EQUAL, set_leaf=True)
-            or maybe(node.eat)(TokenSpec.NOT_EQ, set_leaf=True)
+        maybe(node.eat)(TokenSpec.MORE_THAN, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.LESS_THAN, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.MORE_THAN_EQ, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.LESS_THAN_EQ, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.EQUAL, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.NOT_EQ, set_leaf=True)
     ):
         node.eat_child(Additive)
         node.blang += " " + node.token.text + node.children[1].blang
@@ -613,11 +654,11 @@ def Continue(node):
 @parser(NodeType.FOR_ARRAY_LOOP)
 def ForArrayLoop(node):
     node.eat(TokenSpec.FOR)
-    node.eat(TokenSpec.IDENTIFIER, set_child=True)
+    node.eat_child(Identifier)
     node.eat(TokenSpec.AS)
-    node.eat(TokenSpec.IDENTIFIER, set_child=True)
+    node.eat_child(Identifier)
     node.eat(TokenSpec.COMMA)
-    node.eat(TokenSpec.IDENTIFIER, set_child=True)
+    node.eat_child(Identifier)
     node.eat_child(Block)
     node.blang = f"for {node.children[0].blang} as {node.children[1].blang}, {node.children[1].blang}"
     return node
@@ -669,23 +710,26 @@ Statement = OneOf(
     Terminator,  # a no op
 )
 
+
 @parser(NodeType.IMPORT)
 def Import(node):
     node.eat(TokenSpec.IMPORT)
-    node.blang= "import "
+    node.blang = "import "
     # dot separated path
     if maybe(node.eat)(TokenSpec.DOT, set_child=True):
-        node.blang+="."
+        node.blang += "."
 
     node.eat_child(Identifier)
-    node.blang+=node.children[-1].token.text
+    node.blang += node.children[-1].token.text
     while maybe(node.eat)(TokenSpec.DOT):
         node.eat_child(Identifier)
-        node.blang+="." + node.children[-1].token.text
+        node.blang += "." + node.children[-1].token.text
 
     return node
 
+
 DecOrDef = OneOf(FuncDef, FuncDecl, Declaration, Terminator, Import)
+
 
 @parser(NodeType.MODULE)
 def Module(node):

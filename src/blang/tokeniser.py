@@ -65,6 +65,7 @@ class TokenSpec(enum.Enum):
     COMMA = Matcher(",")
     DOTDOT = Matcher(*"..")
     DOT = Matcher(".")
+    ELLIPSIS = Matcher(*"...")
 
     BAR = Matcher(*"|")
     CHARACTER = CharacterMatcher()

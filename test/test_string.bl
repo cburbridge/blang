@@ -1,6 +1,9 @@
 # expected_exit_code = 244
 # because total is 500, modulo 256
-
+# ***expected output***
+# ****
+# Hello World from Blang!
+# ****
 a:u8[6] = "Hello"
 
 external def print_string(str : <u8>, len: u32) : u8;

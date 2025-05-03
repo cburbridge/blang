@@ -1,4 +1,8 @@
 # expected_exit_code = 1
+# ***expected output***
+# ****
+# Hello World from Blang.
+# ****
 
 external def print_string(str : <u8>, len: u32) : u8;
 

@@ -3,10 +3,9 @@
 ## Bugs
 - fix:  deref an array item >a[0]<   - >a< + n workaround
 - fix:  checking function calls have sufficient parameters
-- fix:  check stack alignment - its going to be bad
 - fix:  deref into self register needs to zero upper bits
 - fix:  comment lines are throwing the line numbers
-- 
+
 ## Feat
 
 - maybe cache builds
@@ -14,19 +13,22 @@
 - type safe overhaul, unify checks
 - better parse errors
 - add debug tracing with .loc and .file directives
+- call func with string literal direct
 
 ## Clean
 - no need for global strings to go into ro data too
 
 ## Core
-- or & and operation
 - floats
+- or & and operation
 - structs
 - bit operations
 
 ----------
 
 # Done
+DONE   calling functions with floats
+DONE :  check stack alignment - its going to be bad
 DONE  fix:  intialise with e.g u8|99| - not a const when not a stack var
 DONE fix:  assign var to a var
 DONE  get printf working

@@ -67,6 +67,8 @@ ArgumentRegistersBySize = {
     1: ["dil", "sil", "dxl", "cxl", "r8b", "r9b"],
 }
 
+FloatArgumentRegisters = [f"xmm{i}" for i in range(7)]
+
 # GP Registers split by size
 GPRegisters = ("r10", "r11", "r12", "r13", "r14", "r15")
 RegistersPartial = {
@@ -203,6 +205,7 @@ def RBP(offset):
 @dataclass
 class Function(Variable):
     parameters: list[Variable] = field(default_factory=list)
+    variadic: bool = False
 
 
 class Context: ...
@@ -277,6 +280,7 @@ class Context:
     def take_a_float_register(self):
         reg = self.free_float_registers.pop()
         self.occupied_float_registers.append(reg)
+        return reg
 
     def free_a_float_register(self, reg):
         self.occupied_float_registers.remove(reg)

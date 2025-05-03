@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from blang.parser import Module, print_tree, NodeType, Node
+from blang.compiler.precompiler import precompile
+from blang.parser import Module, NodeType, Node
 from blang import parser
 from blang.tokeniser import TokenSpec
 import os
@@ -22,6 +23,7 @@ from blang.compiler.types import (
     AddressPointer,
     RBP,
     SignedIntVariableTypes,
+    FloatArgumentRegisters,
 )
 
 
@@ -48,16 +50,18 @@ def node_compiler(type: NodeType):
     return node_compiler
 
 
-def compile(node, context):
+def compile(node: Node, context):
+    assert node.extra.precompiled, "Compiler bug. Precompiled node expected."
     try:
         asm, registers = _node_compilers[node.type](node, context)
 
         if asm:
             spacing = max(30 - len(asm[0]), 0)
             asm[0] += spacing * " " + f"; L{node._tokens[0].lineno}: " + node.blang
-    except AttributeError as e:
-        print_tree(node)
-        raise CompileError(f"Bad times. {e}", node)
+    except:  # AttributeError:
+        # print_tree(node)
+        print(node, node.type)
+        raise  # CompileError(f"Bad times. {e}", node)
     return asm, registers
 
 
@@ -107,11 +111,12 @@ def collect_functions_from_module(module: Node, context: Context):
             type=type,
             indirection_count=refs,
             parameters=[
-                typed_identifier_to_variable(t)
+                typed_identifier_to_variable(t) if t.children else t
                 for t in parameters.children
-                if t.children
             ],
             node=function,
+            variadic=parameters.children
+            and parameters.children[-1].type == NodeType.ELLIPSIS,
         )
         if f.identifier in context.variables:
             raise CompileError(f"Duplicate declaration of '{f.identifier}'", identifier)
@@ -195,6 +200,8 @@ def compile_module(node, context: Context) -> list[str]:
     # Literal floats have to be stored
     float_literals = collect_children_of_type(node, NodeType.FLOAT)
     for flt_node in float_literals:
+        if flt_node.token.text in context.float_literals:
+            continue
         f_id = f"___f{len(context.float_literals) + 1}"
         asm.append(f"{f_id}: dq {flt_node.token.text}")
         var = Variable(
@@ -269,22 +276,6 @@ def test_str_nasm():
     print(string_to_nasm("this\\0that\\nIS\\tagain"))
 
 
-# def load_var_to_register(context, var):
-#     if var.indirection_count or not var.type == VariableType.f64:
-#         reg = context.take_a_register()
-#         reg.type = var.type
-#         reg.indirection_count = var.indirection_count
-#         code = [
-#             f"mov {reg}, {var}",
-#         ]
-#     else:
-#         reg = context.take_a_float_register()
-#         code = [
-#             f"mov {reg}, {var}",
-#         ]
-#     return reg, code
-
-
 @node_compiler(parser.NodeType.DECLARATION)
 def compile_declaration(node, context: Context):
     extern = node.children[0].token and node.children[0].token.typ == TokenSpec.EXTERN
@@ -299,7 +290,6 @@ def compile_declaration(node, context: Context):
         init = node.children[1]
 
     if extern or not context.use_stack:
-
         if context.is_local_var(var.identifier):
             raise CompileError(
                 f"Variable '{var.identifier}' is already defined.", node.children[0]
@@ -434,7 +424,7 @@ def compile_func(node, context: Context):
         f"{function.identifier}:",
         "push rbp",
         "mov rbp, rsp",
-        f"sub rsp, {context.locals_stack_size}",
+        f"sub rsp, {(context.locals_stack_size // 16 + 1) * 16}",
         *blk,
         f"{function.identifier}___ret:",
         "leave",
@@ -570,21 +560,47 @@ def compile_literal_string(node, context: Context):
 def compile_additive(node: Node, context: Context):
     op = "add" if node.token == TokenSpec.PLUS else "sub"
     code_l, (l,) = compile(node.children[0], context)
-
     reg = ensure_is_a_register(code_l, l, context)
+    lval_is_flt = reg.type == VariableType.f64
 
     code_r, (r,) = compile(node.children[1], context)
-    if not isinstance(r, Literal) and r.size != reg.size:
+    if (not isinstance(r, Literal) or lval_is_flt) and r.size != reg.size:
         raise CompileError(
-            f"Size mismatch. {r} is {r.size} bytes, {l} is {l.size} bytes. May need to squelch.",
+            f"Size type mismatch. {node.children[1].blang} is {r.type} = {r.size} bytes,  {node.children[0].blang} is {l.type} = {l.size} bytes. May need to squelch.",
             node,
         )
     if r.type != reg.type or (r.indirection_count > 1 != reg.indirection_count > 1):
         print(
-            "WARNING: Type mismatch in addition. Sizes match so proceeding. May be bad."
+            f"WARNING: L{node.token.lineno} Type mismatch in addition. Sizes match so proceeding. May be bad."
         )
+        print(f"       Lval {reg.type}, Rval {r.type}")
 
     context.mark_free_if_reg(r)
+
+    if lval_is_flt:
+        # add two floats together using xmm
+        f_reg = context.take_a_float_register()
+        r = ensure_is_a_register(code_r, r, context)
+        asm = [
+            *code_l,
+            *code_r,
+            "sub rsp, 16",
+            #
+            f"mov qword [rsp], {reg}",
+            f"mov qword [rsp-8], {r}",  #
+            f"movsd {f_reg}, [rsp]",
+            f"{op}sd {f_reg}, [rsp-8]",
+            f"movsd [rsp], {f_reg}",
+            f"mov qword {reg}, [rsp]",
+            # "movsd xmm0, [rsp]",  # todo cheat for printf
+            #
+            # "xor rax,rax",
+            # "mov rax, 1",
+            "add rsp, 16",
+        ]
+        context.free_a_float_register(f_reg)
+        context.mark_free_if_reg(r)
+        return asm, [reg]
 
     ref_muliplier = 1
     if reg.indirection_count:
@@ -603,31 +619,31 @@ def compile_additive(node: Node, context: Context):
 def compile_term(node: Node, context: Context):
     code_l, (l,) = compile(node.children[0], context)
 
-    reg = ensure_is_a_register(code_l, l, context)
-
     code_r, (r,) = compile(node.children[1], context)
-    if not isinstance(r, Literal) and r.type != reg.type:
+    if not isinstance(r, Literal) and r.type != l.type:
         raise CompileError(
             f"Size mismatch. {r} is {r.size} bytes {r.type}, {l} is {l.size} bytes {l.type}. May need to squelch.",
             node,
         )
-    if r.type != reg.type or (r.indirection_count > 1 != reg.indirection_count > 1):
+    if r.type != l.type or (r.indirection_count > 1 != l.indirection_count > 1):
         print(
-            "WARNING: Type mismatch in addition. Sizes match so proceeding. May be bad."
+            "WARNING: Type mismatch in multiplication. Sizes match so proceeding. May be bad."
         )
 
-    context.mark_free_if_reg(r)
-
-    if r.indirection_count or reg.indirection_count:  # either is indirection
+    if r.indirection_count or l.indirection_count:  # either is indirection
         raise CompileError("Can't multiply or divide with a pointer.", node)
+
+    reg = ensure_is_a_register(code_l, l, context)
 
     asm = [
         *code_l,
         *code_r,
     ]
 
+    context.mark_free_if_reg(r)
+
     # if r is not a reg, make it so because mul needs registers
-    if isinstance(r, Literal):
+    if not isinstance(r, Register):
         rcx = Register("rcx")
         rcx.type = r.type
         asm.append(f"mov {rcx}, {r}")
@@ -644,31 +660,73 @@ def compile_term(node: Node, context: Context):
         VariableType.i64,
     ]
     signed_extend = {8: "cqo", 4: "cdq", 2: "cwd", 1: "cbw"}
+    is_float_op = l.type == VariableType.f64
+
+    # result going into reg, which holds lval now and is a register
+    # rval is in r, which is a register
+
     match node.token:
         case TokenSpec.ASTRISK:
-            return [
-                *asm,  #
-                f"mov {rax}, {l}",
-                f"{'mul' if not is_signed else 'imul'} {r.sizespec} {r}",
-                f"mov {reg}, {rax}",
-            ], [reg]
+            if is_float_op:
+                return [
+                    *asm,
+                    f"mov qword [rsp-8], {reg}",
+                    "movsd xmm0, [rsp-8]",
+                    f"mov qword [rsp-8], {r}",
+                    "movsd xmm1, [rsp-8]",
+                    "mulsd xmm0, xmm1",
+                    "movsd [rsp-8], xmm0",
+                    f"mov qword {reg}, [rsp-8]",
+                ], [reg]
+            else:
+                return [
+                    *asm,  #
+                    f"mov {rax}, {l}",
+                    f"{'mul' if not is_signed else 'imul'} {r.sizespec} {r}",
+                    f"mov {reg}, {rax}",
+                ], [reg]
         case TokenSpec.DIVIDE:
-            return [
-                *asm,  #
-                f"mov {rax}, {l}",
-                "xor rdx, rdx" if not is_signed else signed_extend[rax.size],
-                f"{'div' if not is_signed else 'idiv'} {r.sizespec} {r}",
-                f"mov {reg}, {rax}",
-            ], [reg]
+            if is_float_op:
+                return [
+                    *asm,
+                    f"mov qword [rsp-8], {reg}",
+                    "movsd xmm0, [rsp-8]",
+                    f"mov qword [rsp-8], {r}",
+                    "movsd xmm1, [rsp-8]",
+                    "divsd xmm0, xmm1",
+                    "movsd [rsp-8], xmm0",
+                    f"mov qword {reg}, [rsp-8]",
+                ], [reg]
+            else:
+                return [
+                    *asm,  #
+                    f"mov {rax}, {l}",
+                    "xor rdx, rdx" if not is_signed else signed_extend[rax.size],
+                    f"{'div' if not is_signed else 'idiv'} {r.sizespec} {r}",
+                    f"mov {reg}, {rax}",
+                ], [reg]
 
         case TokenSpec.MODULO:
-            return [
-                *asm,  #
-                f"mov {rax}, {l}",
-                "xor rdx, rdx" if not is_signed else signed_extend[rax.size],
-                f"{'div' if not is_signed else 'idiv'} {r.sizespec} {r}",
-                f"mov {reg}, {rdx}",
-            ], [reg]
+            if is_float_op:
+                return [
+                    *asm,
+                    f"mov qword [rsp-8], {r}",
+                    "fld qword [rsp-8]",
+                    f"mov qword [rsp-8], {reg}",
+                    "fld qword [rsp-8]",
+                    "fprem",
+                    "fstp st1",
+                    "fstp qword [rsp-8]",
+                    f"mov qword {reg}, [rsp-8]",
+                ], [reg]
+            else:
+                return [
+                    *asm,  #
+                    f"mov {rax}, {l}",
+                    "xor rdx, rdx" if not is_signed else signed_extend[rax.size],
+                    f"{'div' if not is_signed else 'idiv'} {r.sizespec} {r}",
+                    f"mov {reg}, {rdx}",
+                ], [reg]
         case _:
             raise CompileError("Compiler bug.", node)
 
@@ -814,13 +872,19 @@ def compile_call(node, context: Context):
     param_push_asm = []
     param_pop_asm = []
     input_params = node.children[1:]
-    for parameter, i, parameter_decl in zip(
-        input_params, range(len(function.parameters)), function.parameters
-    ):
-        target_register = ArgumentRegistersBySize[parameter_decl.size][i]
-        target_register_full = ArgumentRegistersBySize[8][i]
+    i = 0
+    flt_i = 0
+    if function.variadic:
+        extras = [function.parameters[-1]] * (
+            len(input_params) - len(function.parameters)
+        )
+        function_params = function.parameters + extras
+    else:
+        function_params = function.parameters
+    for parameter, parameter_decl in zip(input_params, function_params):
         asm, (p_reg,) = compile(parameter, context)
-        if (
+
+        if parameter_decl.type != NodeType.ELLIPSIS and (
             p_reg.type != parameter_decl.type
             or p_reg.indirection_count != parameter_decl.indirection_count
         ):
@@ -829,14 +893,41 @@ def compile_call(node, context: Context):
                 + f"'{parameter_decl.identifier}' must be {parameter_decl.type} {'ref' if parameter_decl.indirection_count else ''}",
                 node,
             )
-        asm.append(
-            f"mov {SizeSpecifiers[parameter_decl.size]} {target_register}, {p_reg}"
-        )
-        param_push_asm.append(f"push {target_register_full}")
-        param_pop_asm.append(f"pop {target_register_full}")
-        param_fill_asm.extend(asm)
+
+        if p_reg.type == VariableType.f64:
+            ...
+            target_register = FloatArgumentRegisters[flt_i]
+
+            # get the float into memory ...
+            if isinstance(p_reg, Register):
+                asm.append(f"mov [rsp], {p_reg}")
+                target_mem = "[rsp]"
+            else:
+                target_mem = p_reg
+            asm.extend(
+                [
+                    f"movsd {target_register}, {target_mem}",
+                ]
+            )
+            param_fill_asm.extend(asm)
+            flt_i += 1
+        else:
+            target_register = ArgumentRegistersBySize[p_reg.size][i]
+            target_register_full = ArgumentRegistersBySize[8][i]
+            asm.append(f"mov {SizeSpecifiers[p_reg.size]} {target_register}, {p_reg}")
+            param_push_asm.append(f"push {target_register_full}")
+            param_pop_asm.append(f"pop {target_register_full}")
+            param_fill_asm.extend(asm)
+            i += 1
+
         context.mark_free_if_reg(p_reg)
+
+    extra = len(param_push_asm) % 2
+    if extra:
+        param_push_asm.append("push 0")
+        param_pop_asm.append("pop rax")
     param_pop_asm = reversed(param_pop_asm)
+
     rax = Register("rax")
     rax.type = function.type
     rax.indirection_count = function.indirection_count
@@ -848,6 +939,7 @@ def compile_call(node, context: Context):
         *param_push_asm,
         *param_fill_asm,
         "xor rax, rax",
+        f"mov rax, {flt_i}",  # number of float arguments
         f"call {function_name}",
         f"xor {return_val.full_reg}, {return_val.full_reg}",
         f"mov {return_val}, {rax}",
@@ -1164,17 +1256,18 @@ def parse_file(file, debug=False):
     with open(file, "r") as in_f:
         src = in_f.read()
     tokens = list(TokenSpec.tokenise(src))
-    if debug:
-        for p in tokens:
-            print(p.typ, p.text)
+    # if debug:
+    #     for p in tokens:
+    #         print(p.typ, p.text)
     module = Module(tokens)
     return module
 
 
 def compiler(file, debug=False):
     module = parse_file(file, debug)
+    precompile(module)
 
     if not module:
         return None
-    print_tree(module)
+    # print_tree(module)
     return compile(module, Context(filename=file))[0]

@@ -1,5 +1,10 @@
 # expected_exit_code = 0
 
+#
+# ***expected output***
+# ****
+# 19302
+# ****
 
 external def print_string(str : <u8>, len: u32) : u8;
 
@@ -22,8 +27,8 @@ def print_nl() :u8 {
 
 def print_number(number: u64) :u8{
     if number == 0 {
-	#print_digit(0)
-	#print_nl()
+	print_digit(u8|0|)
+	print_nl()
 	return 0
     }
     funky: <u32>
@@ -32,26 +37,33 @@ def print_number(number: u64) :u8{
 
     base:u64 = 100000000
     underway:u8 = false
-    end:u16 = u16|7| + 3 - u16|<funky>| + 42;
+    end:u16 = u16|7| + 2 - u16|<funky>| + 42;
 
-    for 1..u8|end| as d:u8 {
-	place:u64 = number / base;
-	if place {
-	    underway=true
-	}
+    # print_digit(u8|end|)
 
-	if underway {
-	    #print_digit(u8|place|)
+    for 1..10 as d:u8 {
+        place:u64 = number / base;
+
+        if place {
+            underway=true
+
         }
-	number = number % base
-	base = base/10
+
+        if underway {
+            print_digit(u8|place|)
+        }
+
+        number = number % base
+        base = base/10
+
     }
     print_nl()
     return 0;
 }
 
+
 def main(): u8 {
-    a:u64=19302
+    a:u64 = 19302
     b:u8 = print_number(a)
 
     if 10 < 100 {

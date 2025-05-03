@@ -1,10 +1,47 @@
-# expected_exit_code = 0
+# expected_exit_code = 99
+#
+# ***ld_flag*** -lc
+# ***ld_flag*** -dynamic-linker /lib64/ld-linux-x86-64.so.2
+#
+# ***expected output***
+# ****
+# The value is 103.400000
+# The value is 1.100000
+# The value is 0.997870
+# The value is 19.600000
+# The value is 4.900000
+# The value is 1.800000
+# ****
 
-# deref a small u8 should not end up with higher bits
-# still set
+external def printf(fmt: <u8>, ...) : u32;
+external stdout : <u8>
+external def fflush(out: <u8>) : u32
 
 
 def main(): u64 {
-    value:f64 = 99.99
-    return 0
-} 
+    value:f64 = 99.99 + 2.9
+    value2:f64 = value + 0.01 + 0.9 - 0.4
+    frmt: u8[24] = "The value is %f\n"
+    printf(>frmt<, value2)
+    printf(>frmt<, 0.2 + 0.9, 1.2)
+    printf(>frmt<, 0.99787, 1.3)
+
+    mult:f64 = 9.8 * 2.0
+    printf(>frmt<, mult)
+
+    div:f64 = 9.8 / 2.0
+    printf(>frmt<, div)
+
+    mod:f64 = 9.8 % 2.0
+    printf(>frmt<, mod)
+
+    fflush(stdout)
+    return 99
+}
+
+def ftest():f64 {
+    a:f64 = 1.0
+    b:f64 = 2.0
+    c:f64 = a + b
+    return c
+}

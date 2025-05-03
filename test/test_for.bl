@@ -4,7 +4,7 @@ def main(): u32 {
     local_array: u8[8]
     test:u32
     for local_array as i, v {
-	<v> = i
+	<v> = u8|i|
     }
     total:u8=0
     for local_array as i, v {

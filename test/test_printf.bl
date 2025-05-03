@@ -1,6 +1,10 @@
 # expected_exit_code = 0
 # ***ld_flag*** -lc
 # ***ld_flag*** -dynamic-linker /lib64/ld-linux-x86-64.so.2
+# ***expected output***
+# ****
+# The value is 272727
+# ****
 
 external def printf(fmt: <u8>, val: u64) : u32;
 external stdout : <u8>
