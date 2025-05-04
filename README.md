@@ -19,7 +19,6 @@
 - no need for global strings to go into ro data too
 
 ## Core
-- floats
 - or & and operation
 - structs
 - bit operations
@@ -27,6 +26,7 @@
 ----------
 
 # Done
+DONE  floats
 DONE   calling functions with floats
 DONE :  check stack alignment - its going to be bad
 DONE  fix:  intialise with e.g u8|99| - not a const when not a stack var

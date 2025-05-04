@@ -193,6 +193,8 @@ def compile_module(node, context: Context) -> list[str]:
     # Collect all strings together to keep in .ro
     string_literals = collect_children_of_type(node, NodeType.STRING)
     for n in string_literals:
+        if n.token.text in context.string_literals:
+            continue
         s_id = f"___s{len(context.string_literals) + 1}"
         context.string_literals[n.token.text] = s_id
         asm.append(f"{s_id}: db  {string_to_nasm(n.token.text)}, 0")
@@ -1098,40 +1100,92 @@ def compile_relational(node, context: Context):
     left_asm, (left,) = compile(left, context)
     right_asm, (right,) = compile(right, context)
 
-    if left.type in SignedIntVariableTypes or right.type in SignedIntVariableTypes:
-        is_signed = True
+    is_signed = (
+        left.type in SignedIntVariableTypes or right.type in SignedIntVariableTypes
+    )
+    is_float = left.type == VariableType.f64 or right.type == VariableType.f64
+
+    if not is_float:
+        condition = node.token.typ
+        match condition:
+            case TokenSpec.LESS_THAN:
+                op = "setb" if not is_signed else "setl"
+            case TokenSpec.MORE_THAN:
+                op = "seta" if not is_signed else "setg"
+            case TokenSpec.LESS_THAN_EQ:
+                op = "setbe" if not is_signed else "setle"
+            case TokenSpec.MORE_THAN_EQ:
+                op = "setae" if not is_signed else "setge"
+            case TokenSpec.EQUAL:
+                op = "sete"
+            case TokenSpec.NOT_EQ:
+                op = "setne"
+
+        result = context.take_a_register()
+        result.type = VariableType.u8
+        result.indirection_count = 0
+        rax = Register("rax")
+        rax.type = left.type
+
+        asm = [
+            *left_asm,
+            *right_asm,
+            f"mov {rax}, {left}",
+            f"cmp {rax}, {right}",  #
+            f"{op} al",
+            f"mov {result}, al",
+        ]
     else:
-        is_signed = False
+        condition = node.token.typ
+        match condition:
+            case TokenSpec.LESS_THAN:
+                lreg = "xmm0"
+                rreg = "xmm1"
+                op = "cmpltsd "
+            case TokenSpec.MORE_THAN:
+                lreg = "xmm1"
+                rreg = "xmm0"
+                op = "cmpltsd "
+            case TokenSpec.LESS_THAN_EQ:
+                lreg = "xmm0"
+                rreg = "xmm1"
+                op = "cmplesd "
+            case TokenSpec.MORE_THAN_EQ:
+                lreg = "xmm1"
+                rreg = "xmm0"
+                op = "cmplesd "
+            case TokenSpec.EQUAL:
+                lreg = "xmm0"
+                rreg = "xmm1"
+                op = "cmpeqsd "
+            case TokenSpec.NOT_EQ:
+                lreg = "xmm0"
+                rreg = "xmm1"
+                op = "cmpneqsd"
 
-    condition = node.token.typ
-    match condition:
-        case TokenSpec.LESS_THAN:
-            op = "setb" if not is_signed else "setl"
-        case TokenSpec.MORE_THAN:
-            op = "seta" if not is_signed else "setg"
-        case TokenSpec.LESS_THAN_EQ:
-            op = "setbe" if not is_signed else "setle"
-        case TokenSpec.MORE_THAN_EQ:
-            op = "setae" if not is_signed else "setge"
-        case TokenSpec.EQUAL:
-            op = "sete"
-        case TokenSpec.NOT_EQ:
-            op = "setne"
+        result = context.take_a_register()
+        result.type = VariableType.u8
+        result.indirection_count = 0
+        asm = [
+            *left_asm,
+            *right_asm,
+        ]
+        right = ensure_is_a_register(asm, right, context)
+        left = ensure_is_a_register(asm, left, context)
+        asm.extend(
+            [
+                f"mov [rsp-8], {left}",
+                "movsd xmm0, [rsp-8]",
+                f"mov [rsp-8], {right}",
+                "movsd xmm1, [rsp-8]",
+                f"{op} {lreg}, {rreg}",
+                f"movsd [rsp-8], {lreg}",
+                "mov rcx, [rsp-8]",
+                "and rcx, 1",
+                f"mov byte {result}, cl",
+            ]
+        )
 
-    result = context.take_a_register()
-    result.type = VariableType.u8
-    result.indirection_count = 0
-    rax = Register("rax")
-    rax.type = left.type
-
-    asm = [
-        *left_asm,
-        *right_asm,
-        f"mov {rax}, {left}",
-        f"cmp {rax}, {right}",  #
-        f"{op} al",
-        f"mov {result}, al",
-    ]
     context.mark_free_if_reg(left)
     context.mark_free_if_reg(right)
     return asm, [result]

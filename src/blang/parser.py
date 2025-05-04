@@ -739,6 +739,9 @@ def Module(node):
     while maybe(node.eat)(TokenSpec.WHITESPACE) or maybe(node.eat)(TokenSpec.NEWLINE):
         continue
     if node._eaten != len(node._tokens):
-        print(f"UNEXPECTED TOKEN {node._tokens[node._eaten].text}")
+        print(f"UNEXPECTED TOKEN '{node._tokens[node._eaten].text}'")
+        print("_tokens=", node._tokens)
+        print("type=", node.type)
+        print("Line number:", node._tokens[node._eaten].lineno)
         raise ParseError(f"unexpected token {node._tokens[node._eaten]}", node)
     return node
