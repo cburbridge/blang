@@ -336,7 +336,7 @@ def compile_declaration(node, context: Context):
         if init:
             if init.type == NodeType.STRING:
                 if var.type != VariableType.u8 and not isinstance(var, Array):
-                    raise CompileError("Only asign strings to u8[] types.", node)
+                    raise CompileError("Only assign strings to u8[] types.", node)
                 src_str = init.token.text
                 src_id = context.string_literals.get(src_str)
                 if not src_id:
@@ -490,12 +490,11 @@ def compile_de_ref(node, context: Context):
     if reg.indirection_count < 1:
         raise CompileError("Problem. Can't dereference a non-reference.", node)
     reg.indirection_count -= 1
-    asm = [*code]  # f"mov qword {reg}, {reg.location}"]
-    # use the same register, drop size
-    # can't use the same register as need to zero upper bits..
-    asm.append(
-        f"mov {SizeSpecifiers[reg.size]}  {reg}, [{reg.full_reg}]; ;cnt={reg.indirection_count}"
-    )
+    asm = [
+        *code,
+        f"mov {SizeSpecifiers[reg.size]}  {reg}, [{reg.full_reg}]; ;cnt={reg.indirection_count}",
+    ]
+
     return asm, [reg]
 
 
@@ -877,12 +876,21 @@ def compile_call(node, context: Context):
     i = 0
     flt_i = 0
     if function.variadic:
+        required_param_count = len(function.parameters) - 1
         extras = [function.parameters[-1]] * (
             len(input_params) - len(function.parameters)
         )
         function_params = function.parameters + extras
     else:
+        required_param_count = len(function.parameters)
         function_params = function.parameters
+
+    if len(input_params) < required_param_count:
+        raise CompileError(
+            f"Function call {function_name} takes {required_param_count} {'or more' if function.variadic else ''} arguments, but {len(input_params)} were given.",
+            node,
+        )
+
     for parameter, parameter_decl in zip(input_params, function_params):
         asm, (p_reg,) = compile(parameter, context)
 
@@ -892,7 +900,8 @@ def compile_call(node, context: Context):
         ):
             raise CompileError(
                 "Function call parameter type mismatch. "
-                + f"'{parameter_decl.identifier}' must be {parameter_decl.type} {'ref' if parameter_decl.indirection_count else ''}",
+                + f"'{parameter_decl.identifier}' must be {parameter_decl.type} {'ref' if parameter_decl.indirection_count else ''}"
+                + f" but got {p_reg.type} {'ref' if p_reg.indirection_count else ''}.",
                 node,
             )
 
