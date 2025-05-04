@@ -24,6 +24,7 @@ from blang.compiler.types import (
     RBP,
     SignedIntVariableTypes,
     FloatArgumentRegisters,
+    LiteralString,
 )
 
 
@@ -339,11 +340,13 @@ def compile_declaration(node, context: Context):
                     raise CompileError("Only assign strings to u8[] types.", node)
                 src_str = init.token.text
                 src_id = context.string_literals.get(src_str)
+
                 if not src_id:
                     raise CompileError(
                         f'Compiler bug. Missing string literal "{src_str}" in ro data.',
                         node,
                     )
+
                 str_len = len(src_str)
                 if str_len > var.length:
                     raise CompileError(
@@ -554,7 +557,18 @@ def compile_literal_float(node, context: Context):
 @node_compiler(NodeType.STRING)
 def compile_literal_string(node, context: Context):
     val = string_to_nasm(node.token.text)
-    return [], [Literal(val, type=VariableType.u8, length=len(node.token.text))]
+    # return [], [Literal(val, type=VariableType.u8, length=len(node.token.text))]
+    string_literal = context.string_literals[node.token.text]
+    return [], [
+        LiteralString(
+            "tmpstring",
+            type=VariableType.u8,
+            length=len(node.token.text),
+            node=node,
+            location=string_literal,
+            value=val,
+        )
+    ]
 
 
 @node_compiler(NodeType.ADDITIVE)
@@ -893,6 +907,16 @@ def compile_call(node, context: Context):
 
     for parameter, parameter_decl in zip(input_params, function_params):
         asm, (p_reg,) = compile(parameter, context)
+        if isinstance(p_reg, Array):
+            # special case, oh no this is getting worse
+            # pass as a pointer
+            p_reg_ref = context.take_a_register()
+            p_reg_ref.type = p_reg.type
+            p_reg_ref.indirection_count = 1
+
+            asm.extend([f"lea {p_reg_ref}, {p_reg.location}"])
+            context.mark_free_if_reg(p_reg)
+            p_reg = p_reg_ref
 
         if parameter_decl.type != NodeType.ELLIPSIS and (
             p_reg.type != parameter_decl.type
@@ -901,7 +925,7 @@ def compile_call(node, context: Context):
             raise CompileError(
                 "Function call parameter type mismatch. "
                 + f"'{parameter_decl.identifier}' must be {parameter_decl.type} {'ref' if parameter_decl.indirection_count else ''}"
-                + f" but got {p_reg.type} {'ref' if p_reg.indirection_count else ''}.",
+                + f" but got  {{{p_reg.location}}} : {p_reg.type} {'ref' if p_reg.indirection_count else ''}.",
                 node,
             )
 

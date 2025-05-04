@@ -517,6 +517,7 @@ Factor = OneOf(
     FuncCall,
     Number,
     Character,
+    String,
     Boolean,
     ArrayItem,  # oh no, order matters :-(
     Identifier,

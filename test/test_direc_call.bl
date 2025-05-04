@@ -1,0 +1,18 @@
+# expected_exit_code = 0
+# ***ld_flag*** -lc
+# ***ld_flag*** -dynamic-linker /lib64/ld-linux-x86-64.so.2
+# ***expected output***
+# ****
+# Hello World
+# ****
+
+external def printf(fmt: <u8>, ...) : u32;
+external stdout : <u8>
+external def fflush(out: <u8>) : u32
+
+def main(): u8 {
+    printf("Hello World\n")
+    fflush(stdout)
+
+    return 0
+} 

@@ -2,21 +2,16 @@
 
 ## Bugs
 - fix:  deref an array item >a[0]<   - >a< + n workaround
-- fix:  checking function calls have sufficient parameters
-- fix:  deref into self register needs to zero upper bits
 - fix:  comment lines are throwing the line numbers
 
 ## Feat
-
-- maybe cache builds
 - double break or for...else
-- type safe overhaul, unify checks
 - better parse errors
 - add debug tracing with .loc and .file directives
-- call func with string literal direct
+- type safe overhaul, unify checks
+- maybe cache builds
 
 ## Clean
-- no need for global strings to go into ro data too
 
 ## Core
 - or & and operation
@@ -26,6 +21,10 @@
 ----------
 
 # Done
+DONE  call func with string literal direct
+WONTDO - no need for global strings to go into ro data too. YES thre is, they are mutable.
+WONTDO  fix:  deref into self register needs to zero upper bits
+DONE fix:  checking function calls have sufficient parameters
 DONE  floats
 DONE   calling functions with floats
 DONE :  check stack alignment - its going to be bad

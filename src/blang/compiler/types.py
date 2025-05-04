@@ -174,6 +174,13 @@ class Array(SizePropMixin):
         return str(self.location)
 
 
+class LiteralString(Literal, Array):
+    def __init__(self, *args, **kwargs):
+        val = kwargs.pop("value")
+        Literal.__init__(self, val)
+        Array.__init__(self, *args, **kwargs)
+
+
 @dataclass
 class AddressPointer:
     # in a register
@@ -247,6 +254,8 @@ class Context:
     continue_point: list[str] = field(default_factory=lambda: [])
     strings: dict = field(default_factory=dict)
     filename: Path | None = None
+
+    init_asm = []
 
     @property
     def globals_(self):
