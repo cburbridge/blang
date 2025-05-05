@@ -16,5 +16,15 @@ def main(): u8 {
 
     # if not true or 6 > 7 { return 6}
 
-    return 0
+    if 7>8 or 8<7:
+       return 7
+
+    if false and true:
+       return 8
+
+    if not (false or true):
+       return 9
+
+    if true or false:
+        return 0
 } 

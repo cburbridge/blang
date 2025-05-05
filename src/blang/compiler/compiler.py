@@ -1248,6 +1248,33 @@ def compile_negated_relational(node, context: Context):
     ]
 
 
+def _compile_and_or_or(node, context: Context, operation):
+    result = context.take_a_register()
+    result.type = VariableType.u8
+    result.indirection_count = 0
+    left_asm, (left,) = compile(node.children[0], context)
+    right_asm, (right,) = compile(node.children[1], context)
+    context.mark_free_if_reg(left)
+    context.mark_free_if_reg(right)
+    return [
+        *left_asm,
+        *right_asm,
+        f"mov al, {left}",
+        f"{operation} al, {right}",
+        f"mov {result}, al",
+    ], [result]
+
+
+@node_compiler(parser.NodeType.LOGIC_OR)
+def compile_or(node, context: Context) -> list[str]:
+    return _compile_and_or_or(node, context, "or")
+
+
+@node_compiler(parser.NodeType.LOGIC_AND)
+def compile_and(node, context: Context) -> list[str]:
+    return _compile_and_or_or(node, context, "and")
+
+
 @node_compiler(NodeType.BREAK)
 def compile_break(node, context: Context):
     if not context.break_out_point:

@@ -1,7 +1,6 @@
 # todo
 
 ## Bugs
-- fix:  deref an array item >a[0]<   - >a< + n workaround
 - fix:  comment lines are throwing the line numbers
 
 ## Feat
@@ -14,13 +13,14 @@
 ## Clean
 
 ## Core
-- or & and operation
 - structs
 - bit operations
 
 ----------
 
 # Done
+DONE or & and operation
+DONE  fix:  deref an array item >a[0]<   - >a< + n workaround
 DONE  call func with string literal direct
 WONTDO - no need for global strings to go into ro data too. YES thre is, they are mutable.
 WONTDO  fix:  deref into self register needs to zero upper bits
