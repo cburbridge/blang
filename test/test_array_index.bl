@@ -13,6 +13,10 @@ def main(): u32 {
     i=i+1
     local_array[i]=2
 
+    pt: <u8> = >local_array[3]<
+    if <pt> !=2:
+       return 9
+
     i = u16|0+0|
     sum:u8 = local_array[i]
     i=i+1

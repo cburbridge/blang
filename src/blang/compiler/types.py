@@ -181,6 +181,11 @@ class LiteralString(Literal, Array):
         Array.__init__(self, *args, **kwargs)
 
 
+class NodeCompilerValueType(enum.Enum):
+    lval = enum.auto()
+    rval = enum.auto()
+
+
 @dataclass
 class AddressPointer:
     # in a register

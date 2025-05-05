@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from blang.compiler.precompiler import precompile
-from blang.parser import Module, NodeType, Node
+from blang.parser import Module, NodeType, Node, print_tree
 from blang import parser
 from blang.tokeniser import TokenSpec
 import os
@@ -25,6 +25,7 @@ from blang.compiler.types import (
     SignedIntVariableTypes,
     FloatArgumentRegisters,
     LiteralString,
+    NodeCompilerValueType,
 )
 
 
@@ -51,16 +52,16 @@ def node_compiler(type: NodeType):
     return node_compiler
 
 
-def compile(node: Node, context):
+def compile(node: Node, context, **kwargs):
     assert node.extra.precompiled, "Compiler bug. Precompiled node expected."
     try:
-        asm, registers = _node_compilers[node.type](node, context)
+        asm, registers = _node_compilers[node.type](node, context, **kwargs)
 
         if asm:
             spacing = max(30 - len(asm[0]), 0)
             asm[0] += spacing * " " + f"; L{node._tokens[0].lineno}: " + node.blang
     except:  # AttributeError:
-        # print_tree(node)
+        print_tree(node)
         print(node, node.type)
         raise  # CompileError(f"Bad times. {e}", node)
     return asm, registers
@@ -454,15 +455,9 @@ def compile_block(node, context: Context):
 
 @node_compiler(NodeType.IDENTIFIER_REF)
 def compile_ref(node, context: Context):
-    var_name = node.children[0].token.text
-    var = context.variables.get(var_name)
-    if not var:
-        raise CompileError("Unknown variable '{var_name}'", node.children[0])
-
-    reg = context.take_a_register()
-    reg.type = var.type
-    reg.indirection_count = var.indirection_count + 1
-    asm = [f"lea {reg}, {var.location}"]
+    asm, [reg] = compile(
+        node.children[0], context, compile_type=NodeCompilerValueType.lval
+    )
     return asm, [reg]
 
 
@@ -485,7 +480,11 @@ def ensure_is_a_register(code, maybe_reg, context):
 
 
 @node_compiler(NodeType.DE_REF)
-def compile_de_ref(node, context: Context):
+def compile_de_ref(
+    node,
+    context: Context,
+    compile_type: NodeCompilerValueType = NodeCompilerValueType.rval,
+):
     # note, this is compiling only a an rval, in assignment this is not run
     code, (ptr,) = compile(node.children[0], context)
     reg = ensure_is_a_register(code, ptr, context)
@@ -502,8 +501,13 @@ def compile_de_ref(node, context: Context):
 
 
 @node_compiler(NodeType.ARRAY_ITEM)
-def compile_array_item(node, context: Context):
-    # note, this is compiling only as an rval, in assignment this is not run
+def compile_array_item(
+    node,
+    context: Context,
+    compile_type: NodeCompilerValueType = NodeCompilerValueType.rval,
+):
+    # when assigning, this is lval and we return the address, normal case is rval so return value
+
     identifier_node, index_expr = node.children
     code, (index,) = compile(index_expr, context)
     identifier = context.variables[identifier_node.token.text]
@@ -523,18 +527,32 @@ def compile_array_item(node, context: Context):
     ]
 
     asm = [*code]
+    context.mark_free_if_reg(index)
+
+    if compile_type is NodeCompilerValueType.lval:
+        reg.indirection_count = 1
+        return asm, [reg]
+
     # use the same register, drop size
     asm.append(f"mov {SizeSpecifiers[reg.size]}  {reg}, [{reg.full_reg}] ; load it ")
-    context.mark_free_if_reg(index)
     return asm, [reg]
 
 
 @node_compiler(NodeType.IDENTIFIER)
-def compile_identifier(node, context: Context):
+def compile_identifier(
+    node,
+    context: Context,
+    compile_type: NodeCompilerValueType = NodeCompilerValueType.rval,
+):
     var_name = node.token.text
     var = context.variables.get(var_name)
     if not var:
         raise CompileError("Unknown variable '{var_name}'", node)
+    if compile_type is NodeCompilerValueType.lval:
+        reg = context.take_a_register()
+        reg.type = var.type
+        reg.indirection_count = var.indirection_count + 1
+        return [f"lea {reg}, {var.location}"], [reg]
     return [], [context.variables[var_name]]
 
 
@@ -809,30 +827,14 @@ def compile_assignment(node, context: Context):
     elif (
         node.children[0].type == NodeType.ARRAY_ITEM
     ):  # todo I don't like this specialism branching
+        code, (array_item,) = compile(
+            node.children[0], context, compile_type=NodeCompilerValueType.lval
+        )
+        target_address = array_item
         identifier_node, index_expr = node.children[0].children
-        code, (index,) = compile(index_expr, context)
+        # code, (index,) = compile(index_expr, context)
         identifier = context.variables[identifier_node.token.text]
         sizespec = SizeSpecifiers[identifier.size]
-        if isinstance(index, Register):  # its a register so use it
-            target_address = index
-        else:
-            target_address = context.take_a_register()
-            target_address.type = identifier.type
-            target_address.indirection_count = identifier.indirection_count + 1
-            tmp = context.free_registers[0]
-            tmp.type = index.type
-            tmp.indirection_count = 0
-            code = [
-                *asm,
-                *code,
-                f"lea {target_address.full_reg}, {identifier}",
-                f"xor {tmp.full_reg}, {tmp.full_reg}",  # horid temp to zero upper bits for addition
-                f"mov {tmp}, {index}",
-                *(
-                    (f"add {target_address.full_reg}, {tmp.full_reg}",)
-                    * identifier.size
-                ),
-            ]
 
         asm = [
             *code,
@@ -1343,9 +1345,9 @@ def parse_file(file, debug=False):
     with open(file, "r") as in_f:
         src = in_f.read()
     tokens = list(TokenSpec.tokenise(src))
-    # if debug:
-    #     for p in tokens:
-    #         print(p.typ, p.text)
+    if debug:
+        for p in tokens:
+            print(p.typ, p.text)
     module = Module(tokens)
     return module
 
@@ -1356,5 +1358,5 @@ def compiler(file, debug=False):
 
     if not module:
         return None
-    # print_tree(module)
+    print_tree(module)
     return compile(module, Context(filename=file))[0]

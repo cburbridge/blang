@@ -243,7 +243,7 @@ def RefType(node):
 @parser(NodeType.IDENTIFIER_REF)
 def IdentifierRef(node):
     node.eat(TokenSpec.MORE_THAN)
-    node.eat_child(Identifier)
+    node.eat_child(OneOf(ArrayItem, Identifier))
     node.eat(TokenSpec.LESS_THAN)
     node.blang = f">{node.children[0].blang}<"
     return node
