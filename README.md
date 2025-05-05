@@ -1,24 +1,25 @@
-# todo
+# TODO
 
 ## Bugs
-- fix:  comment lines are throwing the line numbers
 
-## Feat
+## Features
 - double break or for...else
+
+## Core Lang
+- bit operations
+- structs
+
+## Future Feature - not considering now
+- inline asm
 - better parse errors
 - add debug tracing with .loc and .file directives
 - type safe overhaul, unify checks
 - maybe cache builds
 
-## Clean
-
-## Core
-- structs
-- bit operations
-
 ----------
 
 # Done
+DONE  comment lines are throwing the line numbers
 DONE or & and operation
 DONE  fix:  deref an array item >a[0]<   - >a< + n workaround
 DONE  call func with string literal direct

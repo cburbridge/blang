@@ -1,5 +1,9 @@
 # expected_exit_code = 28
-
+#
+#
+#
+#
+#
 def main(): u32 {
     local_array: u8[8]
     test:u32
@@ -8,8 +12,8 @@ def main(): u32 {
     }
     total:u8=0
     for local_array as i, v {
-        total = total + <v>	
+        total = total + <v>
     }
     return total;
-   
+
 } 

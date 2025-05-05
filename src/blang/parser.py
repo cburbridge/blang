@@ -187,13 +187,17 @@ def print_tree(node, indent=1):
     if not node:
         print(">>>???<<<")
     else:
-        print(
-            " " * (indent - 1),
-            "-",
-            node.typ,
-            "  =",
-            node.token.text if node.token else "XXXX",
+        s = "".join(
+            (
+                " " * (indent - 1),
+                "-",
+                str(node.typ),
+                "  =",
+                node.token.text if node.token else "XXXX",
+            )
         )
+        l = len(s)
+        print(s, (70 - l) * " ", "line ", node.token.lineno if node.token else "????")
         for c in node.children:
             print_tree(c, indent + 3)
 
@@ -661,7 +665,7 @@ def ForArrayLoop(node):
     node.eat(TokenSpec.COMMA)
     node.eat_child(Identifier)
     node.eat_child(Block)
-    node.blang = f"for {node.children[0].blang} as {node.children[1].blang}, {node.children[1].blang}"
+    node.blang = f"for {node.children[0].blang} as {node.children[1].blang}, {node.children[2].blang}"
     return node
 
 

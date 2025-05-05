@@ -59,7 +59,12 @@ def compile(node: Node, context, **kwargs):
 
         if asm:
             spacing = max(30 - len(asm[0]), 0)
-            asm[0] += spacing * " " + f"; L{node._tokens[0].lineno}: " + node.blang
+            # line number - first not whitespace token
+            i = 0
+            while node._tokens[i].typ in [TokenSpec.WHITESPACE, TokenSpec.NEWLINE]:
+                i += 1
+
+            asm[0] += spacing * " " + f";  L{node._tokens[i].lineno}: " + node.blang
     except:  # AttributeError:
         print_tree(node)
         print(node, node.type)
