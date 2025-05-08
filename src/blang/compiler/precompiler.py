@@ -1,5 +1,5 @@
 from blang.parser import NodeType, Node
-
+from blang.tokeniser import TokenSpec
 
 _node_precompilers = {}
 
@@ -46,6 +46,19 @@ def precompile_identifier_ref(node): ...
 
 @node_precompiler(NodeType.ARRAY)
 def precompile_array(node): ...
+
+
+@node_precompiler(NodeType.BITWISE_OP)
+def precompile_bitop(node):
+    if node.token.type == TokenSpec.BIT_NOT:
+        node.extra.is_unary = True
+    else:
+        node.extra.is_binary = True
+
+    node.extra.produces_value = True
+
+    # check the types here in the new pre-compiler stage....
+
 
 
 @node_precompiler(NodeType.IDENTIFIER)

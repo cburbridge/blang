@@ -17,7 +17,7 @@ def main(): u32 {
     if <pt> !=2:
        return 9
 
-    i = u16|0+0|
+    i = u16|0+0|;
     sum:u8 = local_array[i]
     i=i+1
     sum = sum+local_array[i]

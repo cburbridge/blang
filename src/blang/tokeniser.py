@@ -23,6 +23,10 @@ class Token:
     colno: int
     text: str
 
+    @property
+    def type(self):  # why did i call it typ, stupid really
+        return self.typ
+
     def __eq__(self, o):
         if self.typ == o:
             return True
@@ -67,7 +71,15 @@ class TokenSpec(enum.Enum):
     DOT = Matcher(".")
     ELLIPSIS = Matcher(*"...")
 
-    BAR = Matcher(*"|")
+    BAR = Matcher("|")
+
+    BIT_AND = Matcher(*"bit-and")
+    BIT_OR = Matcher(*"bit-or")
+    BIT_NOT = Matcher(*"bit-not")
+    BIT_XOR = Matcher(*"bit-xor")
+    BIT_LSHIFT = Matcher(*"bit-lshift")
+    BIT_RSHIFT = Matcher(*"bit-rshift")
+
     CHARACTER = CharacterMatcher()
 
     # STRING = Matcher(QUOTE, Repeat(ANY), QUOTE)

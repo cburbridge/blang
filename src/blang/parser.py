@@ -24,6 +24,8 @@ class NodeExtra:
     is_lvalue: bool = False
     is_rvalue: bool = False
     produces_value: bool = False
+    is_unary: bool = False
+    is_binary: bool = False
 
 
 class Node:
@@ -161,6 +163,7 @@ class NodeType(enum.StrEnum):
     TERMINATOR = enum.auto()
     IMPORT = enum.auto()
     ELLIPSIS = enum.auto()
+    BITWISE_OP = enum.auto()
 
 
 def parser(type: NodeType):
@@ -572,9 +575,35 @@ def Term(node):
     return node
 
 
+@parser(NodeType.BITWISE_OP)  # fallback to additive
+def BitwiseOp(node):
+    unary = False
+    node.blang = ""
+    if maybe(node.eat)(TokenSpec.BIT_NOT, set_leaf=True):
+        node.blang += node.token.text + " "
+        unary = True
+
+    node.eat_child(Additive)
+    node.blang + node.children[0].blang
+    if unary:
+        return node
+
+    if (
+        maybe(node.eat)(TokenSpec.BIT_OR, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.BIT_AND, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.BIT_XOR, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.BIT_LSHIFT, set_leaf=True)
+        or maybe(node.eat)(TokenSpec.BIT_RSHIFT, set_leaf=True)
+    ):
+        node.eat_child(Additive)
+        node.blang += f" {node.token.text} " + node.children[1].blang
+        return node
+    return node.children[0]
+
+
 @parser(NodeType.RELATIONAL)
 def Relational(node):
-    node.eat_child(Additive)
+    node.eat_child(BitwiseOp)
     node.blang = node.children[0].blang
     if (
         maybe(node.eat)(TokenSpec.MORE_THAN, set_leaf=True)
@@ -584,7 +613,7 @@ def Relational(node):
         or maybe(node.eat)(TokenSpec.EQUAL, set_leaf=True)
         or maybe(node.eat)(TokenSpec.NOT_EQ, set_leaf=True)
     ):
-        node.eat_child(Additive)
+        node.eat_child(BitwiseOp)
         node.blang += " " + node.token.text + node.children[1].blang
         return node
     return node.children[0]

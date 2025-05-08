@@ -1280,6 +1280,47 @@ def compile_and(node, context: Context) -> list[str]:
     return _compile_and_or_or(node, context, "and")
 
 
+@node_compiler(parser.NodeType.BITWISE_OP)
+def compile_bitop(node, context: Context) -> list[str]:
+    result = context.take_a_register()
+    op = None
+    match node.token.typ:
+        case TokenSpec.BIT_NOT:
+            op = "not"
+        case TokenSpec.BIT_XOR:
+            op = "xor"
+        case TokenSpec.BIT_OR:
+            op = "or"
+        case TokenSpec.BIT_AND:
+            op = "and"
+        case TokenSpec.BIT_LSHIFT:
+            op = "shl"
+        case TokenSpec.BIT_RSHIFT:
+            op = "shr"
+
+    if node.extra.is_binary:
+        left, right = node.children
+        left_asm, (left,) = compile(left, context)
+        right_asm, (right,) = compile(right, context)
+        context.mark_free_if_reg(left)
+        context.mark_free_if_reg(right)
+        result.type = left.type
+        result.indirection_count = 0
+        asm = [
+            *left_asm,
+            *right_asm,
+            f"mov {result}, {left}",
+            f"{op} {result}, {right}",
+        ]
+    elif node.extra.is_unary:
+        left_asm, (left,) = compile(node.children[0], context)
+        context.mark_free_if_reg(left)
+        result.type = left.type
+        result.indirection_count = 0
+        asm = [*left_asm, f"mov {result}, {left}", f"{op} {result}"]
+    return asm, [result]
+
+
 @node_compiler(NodeType.BREAK)
 def compile_break(node, context: Context):
     if not context.break_out_point:

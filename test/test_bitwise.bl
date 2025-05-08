@@ -1,0 +1,39 @@
+# expected_exit_code = 0
+# ***ld_flag*** -lc
+# ***ld_flag*** -dynamic-linker /lib64/ld-linux-x86-64.so.2
+# ***expected output***
+# ****
+# Bitwise AND (a & b)  = 36
+# Bitwise OR  (a | b)  = 253
+# Bitwise XOR (a ^ b)  = 217
+# Bitwise NOT (~a)     = 4294967106
+# Right shift (a >> 1) = 94
+# Left shift (a << 2)  = 756
+# ****
+
+external def printf(fmt: <u8>, ...) : u32;
+external stdout : <u8>
+external def fflush(out: <u8>) : u32
+
+def main(): u8 {
+    a: u32 = 189 # '0b10111101'
+    b: u32 = 100 # '0b01100100'
+    c:u32 = 99
+
+    and_result: u32 = a bit-and b
+    or_result:  u32 = a bit-or b
+    xor_result: u32 = a bit-xor b
+    not_result: u32 = bit-not a
+    shl_result: u32 = a bit-rshift 1
+    shr_result: u32 = a bit-lshift 2
+
+    printf("Bitwise AND (a & b)  = %u\n", and_result)
+    printf("Bitwise OR  (a | b)  = %u\n", or_result)
+    printf("Bitwise XOR (a ^ b)  = %u\n", xor_result)
+    printf("Bitwise NOT (~a)     = %u\n", not_result)
+    printf("Right shift (a >> 1) = %u\n", shl_result)
+    printf("Left shift (a << 2)  = %u\n", shr_result)
+    
+    fflush(stdout)
+
+} 
