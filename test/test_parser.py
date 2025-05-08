@@ -20,14 +20,12 @@ from blang.parser import (
 
 
 def test_block():
-    s = """
-    {
+    s = """{
       fisher : u32 
       fisher = fun(45.98+19, 12,other(99))
       print(fisher)
       return 43
-    }
-    """
+    }"""
 
     tokens = list(TokenSpec.tokenise(s))
     for t in tokens:
@@ -129,7 +127,7 @@ def test_paramlist():
     print([t.typ.name for t in tokens])
     t = ParameterList(tokens)
     assert t
-    assert t._eaten == 11
+    assert t._eaten == 12
     print(t.children)
     print_tree(t)
     # assert False
@@ -137,7 +135,8 @@ def test_paramlist():
 
 def test_func():
     #
-    s = """ def MyFun(fish:f64, face:<i8>):u8{
+    s = """
+    def MyFun(fish:f64, face:<i8>):u8{
     
        a: u8 = 9
        b: <u8> = >a<
@@ -150,7 +149,7 @@ def test_func():
     print([t.typ.name for t in tokens])
     t = FuncDef(tokens)
     assert t
-    assert t._eaten == len(tokens)
+    assert t._eaten == len(tokens) - 2
     print(t.children)
     print_tree(t)
 
@@ -161,7 +160,7 @@ def test_typed_ident():
     print([t.typ.name for t in tokens])
     t = TypedIdentifier(tokens)
     assert t
-    assert t._eaten == 3
+    assert t._eaten == 4  # there is a space
     print(t.children)
     # assert isinstance(t, TypedIdentifier)
     print_tree(t)

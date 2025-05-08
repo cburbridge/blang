@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'  # Adjust as needed
+
+      - name: Install dependencies
+        run: |
+          pip install -U uv
+          uv sync
+
+      - name: Run tests
+        run: |
+          # Replace with how you run BLang tests
+          uv run pytest .
+
+      - name: Build
+        run: |
+          uv build

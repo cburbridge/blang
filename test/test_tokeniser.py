@@ -9,9 +9,16 @@ def test_tokeniser_valid():
        _stinks
     """
     expect = [
+        TokenSpec.NEWLINE,
+        TokenSpec.WHITESPACE,
         TokenSpec.DEF,
+        TokenSpec.WHITESPACE,
         TokenSpec.IDENTIFIER,
+        TokenSpec.NEWLINE,
+        TokenSpec.WHITESPACE,
         TokenSpec.IDENTIFIER,
+        TokenSpec.NEWLINE,
+        TokenSpec.WHITESPACE,
     ]
     actual = [t.typ for t in TokenSpec.tokenise(test_string)]
     assert actual == expect
@@ -30,9 +37,11 @@ def test_tokeniser_trick():
     teststr = "def a_def() defdef"
     expect = [
         TokenSpec.DEF,
+        TokenSpec.WHITESPACE,
         TokenSpec.IDENTIFIER,
         TokenSpec.LPAREN,
         TokenSpec.RPAREN,
+        TokenSpec.WHITESPACE,
         TokenSpec.IDENTIFIER,
     ]
     actual = [t.typ for t in TokenSpec.tokenise(teststr)]
@@ -52,6 +61,7 @@ def test_tokeniser_tricks_typs():
     teststr = "u32 u64"
     expect = [
         TokenSpec.U32,
+        TokenSpec.WHITESPACE,
         TokenSpec.U64,
     ]
     actual = [t.typ for t in TokenSpec.tokenise(teststr)]
