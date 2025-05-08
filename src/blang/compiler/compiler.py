@@ -956,7 +956,12 @@ def compile_call(node, context: Context):
         else:
             target_register = ArgumentRegistersBySize[p_reg.size][i]
             target_register_full = ArgumentRegistersBySize[8][i]
-            asm.append(f"mov {SizeSpecifiers[p_reg.size]} {target_register}, {p_reg}")
+            asm.extend(
+                [
+                    f"xor {target_register_full}, {target_register_full}",
+                    f"mov {SizeSpecifiers[p_reg.size]} {target_register}, {p_reg}",
+                ]
+            )
             param_push_asm.append(f"push {target_register_full}")
             param_pop_asm.append(f"pop {target_register_full}")
             param_fill_asm.extend(asm)

@@ -1,15 +1,14 @@
 # TODO
 
 ## Bugs
-
+- 
 ## Features
 - double break or for...else
 
 ## Core Lang
-- bit operations
-- structs
 
 ## Future Feature - not considering now
+- structs
 - inline asm
 - better parse errors
 - add debug tracing with .loc and .file directives
@@ -19,6 +18,8 @@
 ----------
 
 # Done
+DONE arg parsing promotions to printf - %u
+DONE bit operations
 DONE  comment lines are throwing the line numbers
 DONE or & and operation
 DONE  fix:  deref an array item >a[0]<   - >a< + n workaround

@@ -1,0 +1,29 @@
+# expected_exit_code = 0
+# Tests that args to printf are zero extended c style
+#
+# ***ld_flag*** -lc
+# ***ld_flag*** -dynamic-linker /lib64/ld-linux-x86-64.so.2
+# ***expected output***
+# ****
+# u8: 27
+# u16: 27
+# u32: 27
+# u64: 27
+# ****
+
+external def printf(fmt: <u8>, ...) : u32;
+external stdout : <u8>
+external def fflush(out: <u8>) : u32
+
+def main(): u8 {
+  a:u8 = 27;
+  printf("u8: %u\n", a)
+  b:u16 = 27;
+  printf("u16: %u\n", b)
+  c:u32 = 27;
+  printf("u32: %u\n", c)
+  d:u64 = 27;
+  printf("u64: %u\n", d)
+  fflush(stdout)
+
+} 
