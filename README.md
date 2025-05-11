@@ -1,122 +1,55 @@
-# TODO
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Bugs
-- 
-## Features
-- double break or for...else
+# BLang - A Minimal Programming Language
 
-## Core Lang
+This is a toy programming language with its own compiler backend that emits x86_64 assembly. It supports basic types, arrays, pointers, functions, conditionals, loops, etc. The compiler is written in Python. 
 
-## Future Feature - not considering now
-- structs
-- inline asm
-- better parse errors
-- add debug tracing with .loc and .file directives
-- type safe overhaul, unify checks
-- maybe cache builds
+## Why?
 
-----------
+Just for fun. I wanted to learn how compilers work at a deeper level, and this was a great way to explore parsing, code generation, memory layout, calling conventions, etc.
 
-# Done
-DONE arg parsing promotions to printf - %u
-DONE bit operations
-DONE  comment lines are throwing the line numbers
-DONE or & and operation
-DONE  fix:  deref an array item >a[0]<   - >a< + n workaround
-DONE  call func with string literal direct
-WONTDO - no need for global strings to go into ro data too. YES thre is, they are mutable.
-WONTDO  fix:  deref into self register needs to zero upper bits
-DONE fix:  checking function calls have sufficient parameters
-DONE  floats
-DONE   calling functions with floats
-DONE :  check stack alignment - its going to be bad
-DONE  fix:  intialise with e.g u8|99| - not a const when not a stack var
-DONE fix:  assign var to a var
-DONE  get printf working
-DONE string escapes
-DONE tidy: move terminator out of node parses into own parser
-DONE  fix calling fuction with wrong type / not ref that should be paramteter
-DONE if(1) and if(0) - literal not in reg
-DONE xor rax before func call brok test_divide
-DONE consider possible of removing {} for whitespace
-DONE  not condition
-DONE fix bug returning a return
-DONE negatives
-DONE continue
-DONE while
-DONE break 
-DONE for loop var should promote scope
-DONE fix range loops allow varible size
-DONE fix squelching of derefs and liteals
-DONE multiplication
-DONE logicals
-DONE if
-DONE characters
-DONE strings
-DONE syscalls
-DONE for loops
-DONE for loops on non bytes - fix increments
-DONE squelching
+## Is it useful?
 
-# Grammar
+Probably not. It's not fast, it's not safe, it's not feature-complete, and it doesn't have a standard library. But the code is (mostly) readable, and it covers a lot of core ideas behind compiling a high-level language down to raw machine code.
 
-Statement       -> Assignment | FuncDef | FuncCall |
-                   Declaration | ReturnStatement |
-                   IfStatement | WhileLoop | ForLoop
-Block           -> '{' Statement* '}'
-Assignment      -> IDENTIFIER '=' Expr
-Declaration     -> TypedIdentifier ('=' Expr)?
-ReturnStatement -> 'return' Expr
+## Running
 
-Expr            -> LogicOr   # skip to Additive
+Install NASM. 
 
-LogicOr         -> LogicAnd ('or' LogicAnd)*      
-LogicAnd        -> Equality ('and' Equality)*      
-Equality        -> Relational (('==' | '!=') Relational)*  
-Relational      -> Additive (('>' | '<' | '>=' | '<=') Additive)*
+To compile a .bl source file to a native executable:
 
-Additive        -> Term (('+' | '-') Term)*    
-Term            -> Factor (('*' | '/') Factor)*
-Factor          -> NUMBER | IDENTIFIER | FuncCall | '(' Expr ')' 
+blangc your_program.bl -o your_program
 
-BaseType        -> 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'i8' | 'i16' | 'i32' | 'i64' | 'i128' | 'f32' | 'f64'
-Type            -> BaseType ('ref'*)
-Identifier      -> IDENTIFIER
-TypedIdentifier -> IDENTIFIER ':' Type
+To run tests:
 
-FuncDef         -> 'def' IDENTIFIER '(' TypedIdentifier (',' TypedIdentifier)* ')':' Type '{' Statement* '}'
-FuncCall        -> IDENTIFIER '(' (Expr (',' Expr)*)? ')'
+pytest tests/
 
-IfStatement     -> 'if' '(' Expr ')' Block ('else' Block)?
-WhileLoop       -> 'while' '(' Expr ')' Block
-ForLoop         -> 'for' '(' Assignment? ';' Expr? ';' Assignment? ')' Block
+## Current Features
 
+- Integers (signed/unsigned), doubles
+- Arrays and pointers
+- Functions (multiple arguments, stack handling)
+- Conditionals (if, else)
+- Loops (while, for)
+- Bitwise operations (&, |, ^)
+- String literals and basic string handling
+- Assembly output using NASM
+- Simple CLI compiler
+- CI build and test pipeline
 
-q:u32[100]
+## Missing / Incomplete / Won't Do
 
-for q as n, i {
-}
+- No type inference or advanced type checking
+- No heap allocation or garbage collection
+- No standard library
+- Limited error reporting
+- No optimization passes
+- No inline assembly or macros (yet)
+- No structs
 
-for 1..100 step 5 as i:u8 {
-}
+## License
 
-for 1..100 : 5 as i:u8 {
-}
+MIT
 
-u8|a|
-
-
-
-a: u32
-b: u64
-
-def add(p:u32, q:u32):u32 {
-  v: u32
-  v = 100
-  return p+q+v
-}
-
-def main() :u8 {
-   add(9,10)
-   return 0
-}
+## Example programs
+See `examples/`
