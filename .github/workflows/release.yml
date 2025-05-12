@@ -23,14 +23,15 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install dependencies
+        run: |
+          pip install -U uv
+
       - name: Download wheel from build-and-test
         uses: actions/download-artifact@v4
         with:
           name: dist
 
       - name: Upload to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
-          python -m twine upload dist/*.whl
+          uv publish
