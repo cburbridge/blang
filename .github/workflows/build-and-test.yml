@@ -9,6 +9,9 @@ on:
     branches: [ main ]
   workflow_call:
 
+permissions:
+  id-token: write
+
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
