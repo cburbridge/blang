@@ -1,7 +1,7 @@
 [project]
 name = "blang"
-version = "0.1.0"
-description = "Add your description here"
+dynamic= ["version"]
+description = "A compiler for burb lang."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -22,5 +22,9 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["setuptools", "wheel","hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"

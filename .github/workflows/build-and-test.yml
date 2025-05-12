@@ -1,10 +1,11 @@
-name: CI
+name: build & test
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_call:
 
 jobs:
   test-and-build:
@@ -34,3 +35,9 @@ jobs:
       - name: Build
         run: |
           uv build
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*.whl
