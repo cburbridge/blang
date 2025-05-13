@@ -146,7 +146,7 @@ def import_node_to_filepath(node, imported_from: Path):
 def compile_import(node, context: Context) -> str:
     asm = []
     filename = import_node_to_filepath(node, context.filename)
-    print(filename)
+
     # open the file, read it, parse it,
     module = parse_file(filename)
 
@@ -448,7 +448,6 @@ def compile_block(node, context: Context):
     asm = []
     context.new_frame()
     for child in node.children:
-        print(child.type)
         code, registers = compile(child, context)
         asm.extend(code)
         for reg in registers:
@@ -480,7 +479,7 @@ def ensure_is_a_register(code, maybe_reg, context):
         reg = context.take_a_register()
         reg.type = maybe_reg.type
         reg.indirection_count = maybe_reg.indirection_count
-        code.append(f"mov {reg.full_reg}, {maybe_reg}")
+        code.append(f"mov {reg}, {maybe_reg}")
         return reg
 
 
@@ -842,6 +841,7 @@ def compile_assignment(node, context: Context):
         sizespec = SizeSpecifiers[identifier.size]
 
         asm = [
+            *asm,
             *code,
             f"mov {sizespec} [{target_address}], {reg}   ; {identifier}[...]=... ",  # assign the value
         ]
@@ -1436,5 +1436,5 @@ def compiler(file, debug=False):
 
     if not module:
         return None
-    print_tree(module)
+
     return compile(module, Context(filename=file))[0]

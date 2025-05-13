@@ -1,0 +1,52 @@
+# Demo program that calculates prime numbers
+#
+# Compile:
+#    blangc prime.bl prime --ld_flags "-dynamic-linker /lib64/ld-linux-x86-64.so.2 -lc"
+#
+
+external def printf(fmt: <u8>, ...): u32
+external stdout : <u8>
+external def fflush(out: <u8>) : u32
+
+how_many:u32 = 100
+primes: u32[100]  # we can't say [how_many] because
+                  # consts dont exist yet
+count: u32 = 0
+
+def is_prime(n: u32): u8 {
+    v:u32 = n
+    if n < 2:
+      return 0
+
+    i: u32 = 0
+
+    # blocks can be indented or embraced
+    for 0..count as i:u32:
+        if primes[i] * primes[i] > n:
+          break
+        if v % primes[i] == 0:
+          return 0
+
+    return 1
+}
+
+def main(): u8 {
+    n: u32 = 2
+
+    while count <= how_many {
+        if is_prime(n) {
+            primes[count] = n
+            count = count + 1
+        }
+        # statements can be terminated with ;, or if not ambiguous
+        # then left unterminated
+        n = n + 1;
+    }
+
+    printf("First %d Prime Numbers\n", how_many);
+    for 0..count as i:u32:
+        printf("- %d is prime\n", primes[i])
+    fflush(stdout)
+
+    return 0
+}

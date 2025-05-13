@@ -61,6 +61,9 @@ def print_number(number: u64) :u8{
     return 0;
 }
 
+def pass_u32(in:u32):u32:
+   other:u32 = in
+   return other
 
 def main(): u8 {
     a:u64 = 19302
@@ -95,5 +98,11 @@ def main(): u8 {
     if i32|-10| / i32|5| != -2 { return 2}
 
     if i32|10| / i32|-5| != -2 { return 3}
-    return 0
+
+
+    if 5 %    3 != 2:
+      return 4
+
+    if pass_u32(99) != 99:
+       return 5
 } 
